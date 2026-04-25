@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# System deps for pytesseract + pdf2image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     poppler-utils \
@@ -18,4 +17,6 @@ RUN pip install --no-cache-dir .
 
 COPY worker/ .
 
-CMD ["celery", "-A", "worker.celery_app:celery", "worker", "--loglevel=info"]
+# Render web services require a bound port — run a minimal health server alongside celery
+EXPOSE 8001
+CMD sh -c "python -m http.server 8001 & celery -A worker.celery_app:celery worker --loglevel=info"

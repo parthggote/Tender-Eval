@@ -23,13 +23,14 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
-  # Celery worker — starts after API is healthy
-  - type: worker
+  # Celery worker running as web service (free tier workaround)
+  - type: web
     name: tendereval-worker
     runtime: docker
     dockerfilePath: ./services/worker/Dockerfile
     dockerContext: ./services
     plan: free
+    healthCheckPath: /
     envVars:
       - key: AUTH_SECRET
         sync: false
