@@ -6,8 +6,17 @@ from worker.config import settings
 
 class StorageService:
     def __init__(self):
-        self.client: Client = create_client(settings.supabase_url, settings.supabase_service_key)
-        self.bucket = settings.supabase_bucket
+        self._client = None
+
+    @property
+    def client(self) -> Client:
+        if self._client is None:
+            self._client = create_client(settings.supabase_url, settings.supabase_service_key)
+        return self._client
+
+    @property
+    def bucket(self):
+        return settings.supabase_bucket
 
     def download_file(self, object_name: str) -> bytes:
         return self.client.storage.from_(self.bucket).download(object_name)
