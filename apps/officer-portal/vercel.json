@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm turbo build --filter=officer-portal",
+  "outputDirectory": ".next"
+}
