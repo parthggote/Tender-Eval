@@ -1,0 +1,47 @@
+services:
+  # FastAPI — runs migrations on every deploy before starting
+  - type: web
+    name: tendereval-api
+    runtime: docker
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: ./services/api
+    plan: free
+    healthCheckPath: /docs
+    envVars:
+      - key: AUTH_SECRET
+        sync: false
+      - key: INTERNAL_DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: tendereval
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # Celery worker — starts after API is healthy
+  - type: worker
+    name: tendereval-worker
+    runtime: docker
+    dockerfilePath: ./services/worker/Dockerfile
+    dockerContext: ./services
+    plan: free
+    envVars:
+      - key: AUTH_SECRET
+        sync: false
+      - key: INTERNAL_DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: tendereval
+      - key: GEMINI_API_KEY
+        sync: false

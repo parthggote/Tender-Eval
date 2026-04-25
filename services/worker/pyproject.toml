@@ -1,0 +1,24 @@
+[project]
+name = "tendereval-worker"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "celery>=5.4.0",
+  "redis>=5.0.0",
+  "sqlalchemy>=2.0.30",
+  "psycopg[binary]>=3.2.0",
+  "pydantic-settings>=2.4.0",
+  "supabase>=2.4.0",
+  "google-generativeai>=0.7.0",
+  "pypdf>=4.3.0",
+  "pytesseract>=0.3.10",
+  "pdf2image>=1.17.0",
+  "pillow>=10.0.0",
+  "pgvector>=0.3.0",
+  "sentence-transformers>=3.0.0",
+  "reportlab>=4.2.0"
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"

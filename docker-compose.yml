@@ -1,0 +1,36 @@
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./services/api
+    ports:
+      - "8000:8000"
+    environment:
+      - AUTH_SECRET=${AUTH_SECRET:-changeme}
+      - INTERNAL_DATABASE_URL=${INTERNAL_DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET:-tendereval}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: ./services
+      dockerfile: worker/Dockerfile
+    environment:
+      - AUTH_SECRET=${AUTH_SECRET:-changeme}
+      - INTERNAL_DATABASE_URL=${INTERNAL_DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET:-tendereval}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - redis

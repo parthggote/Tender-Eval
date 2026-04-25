@@ -1,0 +1,9 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+from app.api.v1.router import router as v1_router
+
+app = FastAPI(title="TenderEval Internal API")
+app.include_router(v1_router)
+

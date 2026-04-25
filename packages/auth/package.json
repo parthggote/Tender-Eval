@@ -1,0 +1,39 @@
+{
+  "name": "@workspace/auth",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "clean": "git clean -xdf .cache .turbo build dist node_modules",
+    "format": "prettier --check \"**/*.{js,cjs,mjs,ts,tsx,mdx}\" --ignore-path=\"../../.prettierignore\"",
+    "format:fix": "prettier --write \"**/*.{js,cjs,mjs,ts,tsx,mdx}\" --ignore-path=\"../../.prettierignore\"",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint --fix .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "2.11.1",
+    "@workspace/common": "workspace:*",
+    "@workspace/database": "workspace:*",
+    "@workspace/routes": "workspace:*",
+    "bcryptjs": "3.0.3",
+    "next": "16.0.10",
+    "next-auth": "5.0.0-beta.30",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/prettier-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*"
+  },
+  "prettier": "@workspace/prettier-config",
+  "exports": {
+    ".": "./src/index.ts",
+    "./internal": "./src/internal.ts",
+    "./keys": "./keys.ts"
+  }
+}

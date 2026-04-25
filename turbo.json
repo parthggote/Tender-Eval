@@ -1,0 +1,65 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalEnv": [
+    "AUTH_SECRET",
+    "DATABASE_URL",
+    "NEXT_PUBLIC_PORTAL_URL",
+    "NEXT_PUBLIC_INTERNAL_API_URL",
+    "INTERNAL_DATABASE_URL",
+    "REDIS_URL",
+    "MINIO_ENDPOINT",
+    "MINIO_ACCESS_KEY",
+    "MINIO_SECRET_KEY",
+    "MINIO_BUCKET",
+    "QDRANT_URL",
+    "DEV_AUTH_EMAIL",
+    "DEV_AUTH_PASSWORD"
+  ],
+  "tasks": {
+    "dev": {
+      "dependsOn": ["^generate"],
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^generate"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "clean": {
+      "cache": false
+    },
+    "//#clean": {
+      "cache": false
+    },
+    "check-types": {
+      "dependsOn": ["^check-types"]
+    },
+    "format": {
+      "dependsOn": ["^format"]
+    },
+    "format:fix": {
+      "dependsOn": ["^format:fix"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "analyze": {
+      "dependsOn": ["^analyze"]
+    },
+    "license#dev": {
+      "outputLogs": "errors-only"
+    },
+    "generate": {
+      "cache": false
+    }
+  }
+}

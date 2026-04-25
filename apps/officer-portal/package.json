@@ -1,0 +1,47 @@
+{
+  "name": "officer-portal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "clean": "git clean -xdf .cache .next .turbo build dist node_modules",
+    "format": "prettier --check \"**/*.{js,cjs,mjs,ts,tsx,mdx}\" --ignore-path=\"../../.prettierignore\"",
+    "format:fix": "prettier --write \"**/*.{js,cjs,mjs,ts,tsx,mdx}\" --ignore-path=\"../../.prettierignore\"",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint --fix .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.2.2",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@tanstack/react-table": "8.21.3",
+    "@workspace/auth": "workspace:*",
+    "@workspace/common": "workspace:*",
+    "@workspace/database": "workspace:*",
+    "@workspace/dtos": "workspace:*",
+    "@workspace/routes": "workspace:*",
+    "@workspace/ui": "workspace:*",
+    "class-variance-authority": "0.7.1",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "0.555.0",
+    "next": "16.0.10",
+    "next-safe-action": "8.0.11",
+    "nuqs": "2.8.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-hook-form": "7.67.0",
+    "zod": "4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/prettier-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*"
+  },
+  "prettier": "@workspace/prettier-config"
+}
