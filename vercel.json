@@ -4,11 +4,6 @@
   "outputDirectory": "apps/officer-portal/.next",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "nextjs",
-  "functions": {
-    "apps/officer-portal/app/**": {
-      "maxDuration": 30
-    }
-  },
   "env": {
     "PNPM_VERSION": "9.12.0"
   }
