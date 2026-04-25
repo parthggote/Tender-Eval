@@ -1,9 +1,9 @@
 {
   "version": 2,
+  "framework": "nextjs",
+  "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm turbo build --filter=officer-portal",
   "outputDirectory": "apps/officer-portal/.next",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "framework": "nextjs",
   "env": {
     "PNPM_VERSION": "9.12.0"
   }
