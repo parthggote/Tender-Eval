@@ -16,30 +16,21 @@ const hasDevCredentials = Boolean(
   process.env.DEV_AUTH_EMAIL && process.env.DEV_AUTH_PASSWORD
 );
 
+// Disable adapter for OAuth providers to avoid PKCE issues on Vercel
+// We'll handle user creation manually in the signIn callback
+const useAdapter = false; // hasDatabaseUrl && !hasDevCredentials;
+
 function devUserId(email: string): string {
   return createHash('sha256').update(email.toLowerCase()).digest('hex');
 }
 
 export const authConfig = {
-  // If DB isn't configured (or we're explicitly using DEV credentials), don't use an adapter.
-  // JWT sessions work without a DB, and this prevents callback route crashes.
-  adapter:
-    hasDatabaseUrl && !hasDevCredentials ? PrismaAdapter(prisma) : undefined,
+  // Disable adapter to avoid PKCE cookie issues on Vercel serverless
+  // Use JWT sessions and handle user creation in callbacks
+  adapter: undefined,
   secret: keys().AUTH_SECRET,
   trustHost: true,
-  // Auth.js only supports Credentials when JWT sessions are enabled.
   session: { strategy: 'jwt', maxAge: 60 * 60 * 24 * 7 },
-  cookies: {
-    pkceCodeVerifier: {
-      name: 'next-auth.pkce.code_verifier',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-  },
   pages: {
     signIn: getPathname(routes.portal.auth.SignIn, baseUrl.Portal),
     signOut: getPathname(routes.portal.auth.SignIn, baseUrl.Portal)
@@ -112,7 +103,70 @@ export const authConfig = {
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ user, account, profile }) {
+      // For OAuth providers, ensure user exists in database
+      if (account?.provider === 'google' && user.email) {
+        try {
+          const dbUrl = process.env.DATABASE_URL;
+          if (!dbUrl) {
+            console.warn('[auth] No database configured, skipping user creation');
+            return true;
+          }
+
+          // Check if user exists
+          let dbUser = await prisma.user.findUnique({
+            where: { email: user.email },
+          });
+
+          // Create user if doesn't exist
+          if (!dbUser) {
+            dbUser = await prisma.user.create({
+              data: {
+                email: user.email,
+                name: user.name || null,
+                image: user.image || null,
+                emailVerified: new Date(),
+              },
+            });
+          }
+
+          // Check if account link exists
+          const existingAccount = await prisma.account.findUnique({
+            where: {
+              provider_providerAccountId: {
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+              },
+            },
+          });
+
+          // Create account link if doesn't exist
+          if (!existingAccount) {
+            await prisma.account.create({
+              data: {
+                userId: dbUser.id,
+                type: account.type,
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+                access_token: account.access_token,
+                expires_at: account.expires_at,
+                token_type: account.token_type,
+                scope: account.scope,
+                id_token: account.id_token,
+              },
+            });
+          }
+
+          // Set the user ID from database
+          user.id = dbUser.id;
+        } catch (err) {
+          console.error('[auth] Error creating user:', err);
+          return false;
+        }
+      }
+      return true;
+    },
+    async jwt({ token, user, account }) {
       if (user?.id) {
         token.sub = user.id;
       }
