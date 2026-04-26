@@ -14,11 +14,12 @@ import { TYPE_COLORS } from '~/components/ui/criteria-card';
 type TenderSetupDialogProps = {
   tenderTitle: string;
   agencySlug: string;
+  initialView?: 'choice' | 'templates';
   onChoose: (choice: 'upload' | 'template', template?: CriteriaTemplate) => void;
 };
 
-export function TenderSetupDialog({ tenderTitle, agencySlug, onChoose }: TenderSetupDialogProps) {
-  const [view, setView] = React.useState<'choice' | 'templates'>('choice');
+export function TenderSetupDialog({ tenderTitle, agencySlug, initialView = 'choice', onChoose }: TenderSetupDialogProps) {
+  const [view, setView] = React.useState<'choice' | 'templates'>(initialView);
   const [templates, setTemplates] = React.useState<CriteriaTemplate[]>([]);
   const [query, setQuery] = React.useState('');
   const [selected, setSelected] = React.useState<string | null>(null);

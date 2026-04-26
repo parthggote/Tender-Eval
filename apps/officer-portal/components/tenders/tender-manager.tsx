@@ -28,7 +28,7 @@ import { TenderManagerSkeleton } from '~/components/tenders/tender-manager-skele
 import { templateStore, CriteriaTemplate } from '~/lib/template-store';
 import { UploadPipeline } from '~/components/tenders/upload-pipeline';
 
-export type TenderManagerProps = { tender: any; agencySlug: string };
+export type TenderManagerProps = { tender: any; agencySlug: string; initialSetup?: 'upload' | 'template' };
 
 function docStatusLabel(status: string): { label: string; variant: 'secondary' | 'destructive' | 'outline' } {
   switch (status?.toUpperCase()) {
@@ -39,7 +39,7 @@ function docStatusLabel(status: string): { label: string; variant: 'secondary' |
   }
 }
 
-export function TenderManager({ tender, agencySlug }: TenderManagerProps): React.JSX.Element {
+export function TenderManager({ tender, agencySlug, initialSetup }: TenderManagerProps): React.JSX.Element {
   const router = useRouter();
   const tenderId = tender.id;
 
@@ -55,7 +55,9 @@ export function TenderManager({ tender, agencySlug }: TenderManagerProps): React
   const [inspectorOpen, setInspectorOpen] = React.useState(true);
   const [previewSheetOpen, setPreviewSheetOpen] = React.useState(false);
   const [previewDocName, setPreviewDocName] = React.useState<string | null>(null);
-  const [setupChoice, setSetupChoice] = React.useState<'pending' | 'upload' | 'template' | 'done'>('pending');
+  const [setupChoice, setSetupChoice] = React.useState<'pending' | 'upload' | 'template' | 'done'>(
+    initialSetup ? 'done' : 'pending'
+  );
   const [pipeline, setPipeline] = React.useState<{
     status: 'uploading' | 'processing' | 'extracting' | 'done' | 'error';
     progress: number;
@@ -85,6 +87,16 @@ export function TenderManager({ tender, agencySlug }: TenderManagerProps): React
   }, [tenderId, activeDocKey]);
 
   React.useEffect(() => { fetchData(); }, [fetchData]);
+
+  // If coming from create-tender with upload intent, auto-trigger file picker after load
+  React.useEffect(() => {
+    if (initialSetup === 'upload' && !loading) {
+      setTimeout(() => {
+        const input = document.querySelector<HTMLInputElement>('input[data-upload-trigger]');
+        input?.click();
+      }, 300);
+    }
+  }, [initialSetup, loading]);
 
   const pollJob = (taskId: string, type: 'extract' | 'evaluate') => {
     const interval = setInterval(async () => {
@@ -263,7 +275,10 @@ export function TenderManager({ tender, agencySlug }: TenderManagerProps): React
 
   const showSetupDialog = setupChoice === 'pending' && documents.length === 0 && criteria.length === 0;
 
-  // Setup dialog state — skeleton behind, dialog on top
+  // If coming from create-tender with template intent, show template picker directly
+  const showTemplateSetup = initialSetup === 'template' && setupChoice === 'done' && documents.length === 0 && criteria.length === 0 && !loading;
+
+  // Setup dialog state — skeleton behind, dialog on top (only when navigating directly, not from create-tender)
   if (showSetupDialog) {
     return (
       <div className="relative h-full overflow-hidden">
@@ -281,14 +296,36 @@ export function TenderManager({ tender, agencySlug }: TenderManagerProps): React
               toast.success(`Applied template: ${template.name}`);
               setSetupChoice('done');
             } else {
-              // User chose upload — go straight to upload, open file picker
               setSetupChoice('done');
               setInspectorOpen(true);
-              // Trigger file input after state settles
               setTimeout(() => {
                 const input = document.querySelector<HTMLInputElement>('input[data-upload-trigger]');
                 input?.click();
               }, 100);
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Template setup — coming from create-tender with template intent
+  if (showTemplateSetup) {
+    return (
+      <div className="relative h-full overflow-hidden">
+        <TenderManagerSkeleton />
+        <TenderSetupDialog
+          tenderTitle={tender.title}
+          agencySlug={agencySlug}
+          initialView="templates"
+          onChoose={(choice, template) => {
+            if (choice === 'template' && template) {
+              setCriteria(template.criteria.map((c) => ({
+                id: c.id, tenderId, text: c.text, type: c.type,
+                threshold: c.threshold, mandatory: c.mandatory,
+                sourcePage: null, confidence: 1,
+              })));
+              toast.success(`Applied template: ${template.name}`);
             }
           }}
         />

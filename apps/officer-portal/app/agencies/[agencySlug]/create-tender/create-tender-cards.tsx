@@ -58,12 +58,12 @@ export function CreateTenderCards({ agencySlug }: { agencySlug: string }) {
 
     try {
       const tender = await createTender(agencySlug, { title, reference });
-      // Redirect straight to overview — TenderSetupDialog will handle the rest
+      // Pass setup intent as query param so overview skips the dialog
       router.push(
         replaceTenderId(
           replaceAgencySlug(routes.portal.agencies.agencySlug.tenders.tenderId.overview, agencySlug),
           tender.id
-        )
+        ) + `?setup=${mode}`
       );
     } catch {
       toast.error('Could not create tender. Please try again.');
