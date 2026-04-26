@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+from google import genai
+from google.genai import types
+from worker.config import settings
+
 
 class EmbedderService:
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
-        self.model_name = model_name
-        self._model = None
+    def __init__(self):
+        self._client = None
 
     @property
-    def model(self):
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_name)
-        return self._model
+    def client(self):
+        if self._client is None:
+            self._client = genai.Client(api_key=settings.gemini_api_key)
+        return self._client
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        return self.model.encode(texts).tolist()
+        results = []
+        for text in texts:
+            response = self.client.models.embed_content(
+                model="models/text-embedding-004",  # 768-dim, free tier
+                contents=text,
+                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+            )
+            results.append(response.embeddings[0].values)
+        return results
 
 
 embedder = EmbedderService()
