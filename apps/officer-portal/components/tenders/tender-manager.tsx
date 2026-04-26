@@ -159,7 +159,7 @@ export function TenderManager({ tender, agencySlug, initialSetup }: TenderManage
     // Step 1: Upload
     setPipeline({ status: 'uploading', progress: 10, label: 'Uploading document…' });
     const tick = setInterval(() => setPipeline((p) => p ? { ...p, progress: Math.min(p.progress + 10, 85) } : p), 350);
-    
+
     let documentId: string;
     try {
       const fd = new FormData();
@@ -172,90 +172,81 @@ export function TenderManager({ tender, agencySlug, initialSetup }: TenderManage
     } catch {
       clearInterval(tick);
       setPipeline({ status: 'error', progress: 0, label: 'Upload failed', error: 'Could not upload document. Please try again.' });
-      setTimeout(() => setPipeline(null), 3000);
+      setTimeout(() => setPipeline(null), 4000);
       return;
     }
 
-    // Step 2: OCR via SSE
-    setPipeline({ status: 'processing', progress: 5, label: 'Processing document (OCR)…' });
-    
-    await new Promise<void>((resolve, reject) => {
-      const es = new EventSource(`/api/tenders/${tenderId}/documents/${documentId}/status-stream`);
-      
-      es.addEventListener('step_update', (e) => {
-        const data = JSON.parse(e.data) as { progress: number; message: string };
-        setPipeline((p) => p ? { ...p, progress: data.progress, label: data.message } : p);
-      });
-      
-      es.addEventListener('done', () => {
-        setPipeline({ status: 'processing', progress: 100, label: 'Document processed' });
-        es.close();
-        resolve();
-      });
-      
-      es.addEventListener('error', () => {
-        es.close();
-        reject(new Error('OCR processing failed'));
-      });
-      
-      setTimeout(() => { es.close(); resolve(); }, 90_000);
-    }).catch(() => {
-      setPipeline({ status: 'error', progress: 0, label: 'Processing failed', error: 'OCR failed. Please try again.' });
-      setTimeout(() => setPipeline(null), 3000);
-      return;
+    // Step 2: Poll document status until OCR completes (replaces broken SSE)
+    setPipeline({ status: 'processing', progress: 10, label: 'Processing document (OCR)…' });
+    let ocrProgress = 10;
+    const ocrTick = setInterval(() => {
+      ocrProgress = Math.min(ocrProgress + 5, 85);
+      setPipeline((p) => p ? { ...p, progress: ocrProgress } : p);
+    }, 1500);
+
+    const ocrDone = await new Promise<boolean>((resolve) => {
+      const poll = setInterval(async () => {
+        try {
+          const docs = await getTenderDocuments(tenderId);
+          const doc = docs.find((d: any) => d.id === documentId);
+          if (doc?.status === 'SUCCEEDED') { clearInterval(poll); resolve(true); }
+          else if (doc?.status === 'FAILED') { clearInterval(poll); resolve(false); }
+        } catch { /* keep polling */ }
+      }, 3000);
+      // Timeout after 2 minutes
+      setTimeout(() => { clearInterval(poll); resolve(true); }, 120_000);
     });
-    
+
+    clearInterval(ocrTick);
+
+    if (!ocrDone) {
+      setPipeline({ status: 'error', progress: 0, label: 'Processing failed', error: 'OCR failed. Please try again.' });
+      setTimeout(() => setPipeline(null), 4000);
+      return;
+    }
+
+    setPipeline({ status: 'processing', progress: 100, label: 'Document processed successfully' });
     await fetchData();
 
-    // Step 3: Extract criteria
+    // Step 3: Wait for auto-triggered criteria extraction (chained from OCR in worker)
     setPipeline({ status: 'extracting', progress: 0, label: 'Extracting criteria with AI…' });
     let extractProgress = 0;
     const extractTick = setInterval(() => {
-      extractProgress = Math.min(extractProgress + 4, 88);
+      extractProgress = Math.min(extractProgress + 3, 88);
       setPipeline((p) => p ? { ...p, progress: extractProgress } : p);
-    }, 1000);
-    
-    let taskId: string;
-    try {
-      const result = await triggerCriteriaExtraction(tenderId);
-      taskId = result.taskId;
-    } catch {
-      clearInterval(extractTick);
-      setPipeline({ status: 'error', progress: 0, label: 'Extraction failed', error: 'Could not start criteria extraction.' });
-      setTimeout(() => setPipeline(null), 3000);
-      return;
-    }
-    
-    await new Promise<void>((resolve, reject) => {
+    }, 1500);
+
+    // Poll criteria — worker auto-chains extraction after OCR
+    await new Promise<void>((resolve) => {
       const poll = setInterval(async () => {
         try {
-          const s = await getJobStatus(taskId);
-          if (s.status === 'SUCCESS') { 
-            clearInterval(poll); 
-            // Fetch criteria incrementally
-            const newCriteria = await getTenderCriteria(tenderId);
-            setCriteria(newCriteria);
-            resolve(); 
+          const crit = await getTenderCriteria(tenderId);
+          if (crit.length > 0) {
+            setCriteria(crit);
+            clearInterval(poll);
+            resolve();
           }
-          else if (s.status === 'FAILURE') { clearInterval(poll); reject(); }
-        } catch { clearInterval(poll); reject(); }
-      }, 2000);
-      setTimeout(() => { clearInterval(poll); resolve(); }, 120000);
-    }).catch(() => {
-      clearInterval(extractTick);
-      setPipeline({ status: 'error', progress: 0, label: 'Extraction failed', error: 'AI extraction failed. Please try again.' });
-      setTimeout(() => setPipeline(null), 3000);
-      return;
+        } catch { /* keep polling */ }
+      }, 3000);
+      // Timeout after 3 minutes — resolve anyway so UI doesn't hang
+      setTimeout(() => { clearInterval(poll); resolve(); }, 180_000);
     });
-    
+
     clearInterval(extractTick);
-    if (pipeline?.status === 'error') return;
 
     // Done
-    setPipeline({ status: 'done', progress: 100, label: 'Criteria extracted successfully' });
-    toast.success('Criteria extracted successfully.');
+    const finalCriteria = await getTenderCriteria(tenderId);
+    setCriteria(finalCriteria);
     await fetchData();
-    setTimeout(() => { setPipeline(null); setSetupChoice('done'); }, 1500);
+
+    if (finalCriteria.length > 0) {
+      setPipeline({ status: 'done', progress: 100, label: `${finalCriteria.length} criteria extracted` });
+      toast.success(`${finalCriteria.length} criteria extracted successfully.`);
+    } else {
+      setPipeline({ status: 'done', progress: 100, label: 'Document processed — no criteria found' });
+      toast.success('Document processed. Click "Extract criteria" to retry.');
+    }
+    setTimeout(() => { setPipeline(null); setSetupChoice('done'); }, 2000);
   };
 
   const handleDeleteDoc = async (docId: string, objectKey: string) => {

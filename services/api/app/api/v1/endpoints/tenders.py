@@ -139,7 +139,10 @@ def delete_tender(
         payload={"tenderId": tender_id, "title": tender.title},
     )
 
-    db.delete(tender)
+    # Use raw SQL so DB-level CASCADE handles child rows (bidder, criteria, etc.)
+    # ORM delete would try to SET NULL on FKs before deleting, causing constraint errors
+    from sqlalchemy import text as sql_text
+    db.execute(sql_text("DELETE FROM tender WHERE id = :id"), {"id": tender_uuid})
     db.commit()
     return {"ok": True}
 
@@ -344,7 +347,8 @@ def delete_tender_document(
     except Exception as e:
         print(f"[storage] delete failed for {doc.object_key}: {e}")
 
-    db.delete(doc)
+    from sqlalchemy import text as sql_text
+    db.execute(sql_text("DELETE FROM tender_document WHERE id = :id"), {"id": doc_uuid})
     db.commit()
 
     _append_audit_entry(

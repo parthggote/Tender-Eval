@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import time
 from google import genai
-from google.genai import types
 from worker.config import settings
 
 
@@ -27,9 +26,6 @@ class GeminiClient:
                 response = self.client.models.generate_content(
                     model="gemini-2.5-flash",  # free tier: 10 RPM, 250 RPD
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                    ),
                 )
                 return response.text or ""
             except Exception as e:
@@ -42,9 +38,20 @@ class GeminiClient:
                     raise
         return ""
 
+    def _parse_json(self, raw: str) -> str:
+        """Strip markdown code fences if present."""
+        raw = raw.strip()
+        if raw.startswith("```"):
+            # Remove opening fence (```json or ```)
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            # Remove closing fence
+            if raw.endswith("```"):
+                raw = raw[:-3]
+        return raw.strip()
+
     def extract_criteria(self, text: str) -> list[dict]:
         prompt = f"""Extract procurement evaluation criteria from this tender document.
-Return a JSON array of objects with keys:
+Return ONLY a JSON array, no explanation. Each object must have:
 - text: criterion description
 - type: one of [FINANCIAL, TECHNICAL, COMPLIANCE, CERTIFICATION]
 - threshold: numeric threshold string or null
@@ -55,9 +62,7 @@ Tender text:
 {text[:28000]}"""
 
         try:
-            raw = self._generate(prompt).strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            raw = self._parse_json(self._generate(prompt))
             return json.loads(raw)
         except Exception as e:
             print(f"[gemini] extract_criteria parse error: {e}")
@@ -65,19 +70,18 @@ Tender text:
 
     def evaluate_criterion(self, criterion_text: str, evidence_text: str) -> dict:
         prompt = f"""Evaluate if the bidder evidence satisfies the tender criterion.
+Return ONLY a JSON object, no explanation.
 
 Criterion: {criterion_text}
 Evidence: {evidence_text}
 
-Return a JSON object with:
+JSON keys:
 - verdict: one of [PASS, FAIL, NEEDS_REVIEW]
 - reason: concise explanation
 - confidence: float 0.0-1.0"""
 
         try:
-            raw = self._generate(prompt).strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            raw = self._parse_json(self._generate(prompt))
             return json.loads(raw)
         except Exception:
             return {"verdict": "NEEDS_REVIEW", "reason": "AI parsing failed", "confidence": 0.0}
