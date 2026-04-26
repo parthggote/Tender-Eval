@@ -5,7 +5,7 @@ from datetime import datetime
 from hashlib import sha256
 import json
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.core.security import verify_signed_user_context
 from app.db.models import AgencyMembership, AgencyWorkspace, AuditEntry, OfficerRole, ReviewCase, Tender, ReportExport
 from app.db.session import get_db
 from app.schemas.dtos import AgencyWorkspaceOut, ReviewCaseOut, AuditEntryOut, iso, ReportExportOut
+from app.services.storage import storage_service
 
 router = APIRouter()
 
@@ -95,8 +96,6 @@ def list_agencies(
         signature_hex=x_user_signature,
     )
 
-    _bootstrap_if_needed(db, user_id)
-
     agencies = db.execute(
         select(AgencyWorkspace)
         .join(AgencyMembership, AgencyMembership.agency_id == AgencyWorkspace.id)
@@ -104,13 +103,14 @@ def list_agencies(
         .order_by(AgencyWorkspace.name.asc())
     ).scalars().all()
 
-    return [AgencyWorkspaceOut(id=str(a.id), slug=a.slug, name=a.name) for a in agencies]
+    return [AgencyWorkspaceOut(id=str(a.id), slug=a.slug, name=a.name, logoUrl=a.logo_url) for a in agencies]
 
 
 @router.post("/agencies", response_model=AgencyWorkspaceOut)
-def create_agency(
-    name: str,
-    slug: str,
+async def create_agency(
+    name: str = Form(...),
+    slug: str = Form(...),
+    logo: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     x_user_timestamp: str | None = Header(default=None, alias="X-User-Timestamp"),
@@ -118,7 +118,31 @@ def create_agency(
 ) -> AgencyWorkspaceOut:
     user_id = verify_signed_user_context(user_id=x_user_id, timestamp_ms=x_user_timestamp, signature_hex=x_user_signature)
     
-    agency = AgencyWorkspace(name=name, slug=slug)
+    if not name or not slug:
+        raise HTTPException(status_code=400, detail="Name and slug are required")
+    
+    # Check if slug already exists
+    existing = db.execute(select(AgencyWorkspace).where(AgencyWorkspace.slug == slug)).scalars().first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Agency with this slug already exists")
+    
+    # Upload logo if provided
+    logo_url = None
+    if logo and logo.filename:
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/svg+xml"]
+        if logo.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail="Logo must be an image (JPEG, PNG, WebP, or SVG)")
+        
+        # Generate unique filename
+        ext = logo.filename.split(".")[-1] if "." in logo.filename else "png"
+        object_key = f"agencies/{slug}/logo.{ext}"
+        
+        # Upload to Supabase Storage
+        content = await logo.read()
+        logo_url = storage_service.upload_file(object_key, content, logo.content_type or "image/png")
+    
+    agency = AgencyWorkspace(name=name, slug=slug, logo_url=logo_url)
     db.add(agency)
     db.commit()
     db.refresh(agency)
@@ -127,7 +151,16 @@ def create_agency(
     db.add(membership)
     db.commit()
     
-    return AgencyWorkspaceOut(id=str(agency.id), name=agency.name, slug=agency.slug)
+    _append_audit_entry(
+        db,
+        agency_id=agency.id,
+        tender_id=None,
+        actor_user_id=user_id,
+        action="CREATE_AGENCY",
+        payload={"agencySlug": agency.slug, "agencyName": agency.name, "hasLogo": logo_url is not None},
+    )
+    
+    return AgencyWorkspaceOut(id=str(agency.id), name=agency.name, slug=agency.slug, logoUrl=logo_url)
 
 
 @router.post("/agencies/{agency_id_or_slug}/members")

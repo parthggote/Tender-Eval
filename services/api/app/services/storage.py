@@ -10,12 +10,15 @@ class StorageService:
         self.client: Client = create_client(settings.supabase_url, settings.supabase_service_key)
         self.bucket = settings.supabase_bucket
 
-    def upload_file(self, object_name: str, data: bytes, content_type: str = "application/pdf"):
+    def upload_file(self, object_name: str, data: bytes, content_type: str = "application/pdf") -> str:
+        """Upload file and return public URL"""
         self.client.storage.from_(self.bucket).upload(
             path=object_name,
             file=data,
             file_options={"content-type": content_type, "upsert": "true"},
         )
+        # Return public URL
+        return f"{settings.supabase_url}/storage/v1/object/public/{self.bucket}/{object_name}"
 
     def get_signed_url(self, object_name: str, expires_minutes: int = 30) -> str:
         res = self.client.storage.from_(self.bucket).create_signed_url(

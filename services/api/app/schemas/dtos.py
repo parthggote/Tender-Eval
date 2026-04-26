@@ -11,6 +11,7 @@ class AgencyWorkspaceOut(BaseModel):
     id: str
     slug: str
     name: str
+    logoUrl: str | None = None
 
 
 class TenderSummaryOut(BaseModel):

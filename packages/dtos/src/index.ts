@@ -51,7 +51,8 @@ export enum ConfidenceBand {
 export const AgencyWorkspaceSchema = z.object({
   id: z.string(),
   slug: z.string(),
-  name: z.string()
+  name: z.string(),
+  logoUrl: z.string().nullable().optional()
 });
 export type AgencyWorkspace = z.infer<typeof AgencyWorkspaceSchema>;
 
