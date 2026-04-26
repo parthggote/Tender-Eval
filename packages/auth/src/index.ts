@@ -29,6 +29,17 @@ export const authConfig = {
   trustHost: true,
   // Auth.js only supports Credentials when JWT sessions are enabled.
   session: { strategy: 'jwt', maxAge: 60 * 60 * 24 * 7 },
+  cookies: {
+    pkceCodeVerifier: {
+      name: 'next-auth.pkce.code_verifier',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   pages: {
     signIn: getPathname(routes.portal.auth.SignIn, baseUrl.Portal),
     signOut: getPathname(routes.portal.auth.SignIn, baseUrl.Portal)
@@ -37,6 +48,13 @@ export const authConfig = {
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID ?? '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+      authorization: {
+        params: {
+          prompt: 'consent',
+          access_type: 'offline',
+          response_type: 'code',
+        },
+      },
     }),
     Credentials({
       name: 'Credentials',
