@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { replaceAgencySlug, replaceTenderId, routes } from '@workspace/routes';
 import { cn } from '@workspace/ui/lib/utils';
 import { PageHeader } from '~/components/layout/page-header';
+import { getTender } from '~/lib/internal-api';
 
 export default function TenderLayout({
   params,
@@ -16,6 +17,13 @@ export default function TenderLayout({
 }) {
   const pathname = usePathname();
   const { agencySlug, tenderId } = React.use(params);
+  const [tenderTitle, setTenderTitle] = React.useState<string>('Tender');
+
+  React.useEffect(() => {
+    getTender(tenderId)
+      .then((t) => setTenderTitle(t.title))
+      .catch(() => {});
+  }, [tenderId]);
 
   const tabs = [
     {
@@ -34,22 +42,18 @@ export default function TenderLayout({
     },
   ];
 
-  const activeTab = tabs.find((t) => pathname.startsWith(t.href));
-
   return (
     <div className="flex flex-col size-full overflow-hidden">
-      {/* #39: PageHeader with SidebarTrigger + breadcrumb */}
       <PageHeader
         breadcrumbs={[
           {
             label: 'Tenders',
             href: replaceAgencySlug(routes.portal.agencies.agencySlug.tenders.Index, agencySlug),
           },
-          { label: activeTab?.title ?? 'Tender' },
+          { label: tenderTitle },
         ]}
       />
 
-      {/* Tab bar */}
       <div className="border-b bg-background px-6">
         <nav className="flex gap-1" aria-label="Tender sections">
           {tabs.map((tab) => {

@@ -30,7 +30,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_passage_embedding_bidder_id ON passage_embedding (bidder_id)")
 
     # Use raw SQL for the vector column type and HNSW index
-    op.execute("ALTER TABLE passage_embedding ALTER COLUMN embedding TYPE vector(384) USING embedding::vector(384)")
+    op.execute("ALTER TABLE passage_embedding ALTER COLUMN embedding TYPE vector(768) USING embedding::vector(768)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_passage_embedding_hnsw ON passage_embedding USING hnsw (embedding vector_cosine_ops)")
 
 

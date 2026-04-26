@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir .
 
 COPY worker/ .
 
-# Render web services require a bound port — run a minimal health server alongside celery
+# health.py: raw socket server — no framework, ~1MB vs ~15MB for http.server module
+# solo pool + max-tasks-per-child=1 releases memory after every task
 EXPOSE 8001
-CMD sh -c "python -m http.server 8001 & celery -A worker.celery_app:celery worker --loglevel=info"
+CMD sh -c "python health.py & celery -A worker.celery_app:celery worker --loglevel=info --pool=solo --concurrency=1 --max-tasks-per-child=1"
