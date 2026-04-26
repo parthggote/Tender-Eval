@@ -81,7 +81,7 @@ export default async function SignInPage(props: PageProps): Promise<React.JSX.El
               <path d="M2 8 C6 5, 14 11, 20 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" className="text-muted-foreground/30" />
               <path d="M17 4 L20 7 L18 11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/30" />
             </svg>
-            <p className="font-sketch text-sm text-muted-foreground/50">TenderEval AI Platform</p>
+            <p className="font-accent text-sm text-muted-foreground/50">TenderEval AI Platform</p>
           </div>
         </div>
 
@@ -181,3 +181,4 @@ export default async function SignInPage(props: PageProps): Promise<React.JSX.El
     </main>
   );
 }
+

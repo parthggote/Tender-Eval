@@ -73,10 +73,10 @@ const Navbar1 = ({
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <Button asChild variant="ghost" size="sm" className="font-sketch tracking-wide">
+            <Button asChild variant="ghost" size="sm" className="font-accent tracking-wide">
               <Link href={auth.login.url}>{auth.login.text.toUpperCase()}</Link>
             </Button>
-            <Button asChild size="sm" className="rounded-none font-sketch tracking-wide gap-1.5">
+            <Button asChild size="sm" className="rounded-none font-accent tracking-wide gap-1.5">
               <Link href={auth.signup.url}>
                 {auth.signup.text.toUpperCase()}
                 <ArrowRight className="size-3.5" aria-hidden="true" />
@@ -126,10 +126,10 @@ const Navbar1 = ({
                 )}
 
                 <div className="flex flex-col gap-2 border-t border-border pt-4">
-                  <Button asChild variant="outline" className="rounded-none font-sketch tracking-wide">
+                  <Button asChild variant="outline" className="rounded-none font-accent tracking-wide">
                     <Link href={auth.login.url}>{auth.login.text.toUpperCase()}</Link>
                   </Button>
-                  <Button asChild className="rounded-none font-sketch tracking-wide gap-1.5">
+                  <Button asChild className="rounded-none font-accent tracking-wide gap-1.5">
                     <Link href={auth.signup.url}>
                       {auth.signup.text.toUpperCase()}
                       <ArrowRight className="size-3.5" aria-hidden="true" />
@@ -149,7 +149,7 @@ const renderMenuItem = (item: MenuItem) => {
   if (item.items) {
     return (
       <NavigationMenuItem key={item.title}>
-        <NavigationMenuTrigger className="text-sm font-sketch font-medium tracking-wide gap-1.5">
+        <NavigationMenuTrigger className="text-sm font-accent font-medium tracking-wide gap-1.5">
           {item.icon && <span className="opacity-70">{item.icon}</span>}
           {item.title.toUpperCase()}
         </NavigationMenuTrigger>
@@ -189,7 +189,7 @@ const renderMenuItem = (item: MenuItem) => {
     <NavigationMenuItem key={item.title}>
       <Link
         href={item.url}
-        className="inline-flex h-9 items-center gap-1.5 px-4 text-sm font-sketch font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted tracking-wide"
+        className="inline-flex h-9 items-center gap-1.5 px-4 text-sm font-accent font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted tracking-wide"
       >
         {item.icon && <span className="opacity-70">{item.icon}</span>}
         {item.title.toUpperCase()}
@@ -238,3 +238,4 @@ const renderMobileMenuItem = (item: MenuItem) => {
 };
 
 export { Navbar1 };
+

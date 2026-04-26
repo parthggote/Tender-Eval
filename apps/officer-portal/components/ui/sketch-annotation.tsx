@@ -17,7 +17,7 @@ export function SketchAnnotation({
 }): React.JSX.Element {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-sketch text-sm text-muted-foreground select-none ${className}`}
+      className={`inline-flex items-center gap-1.5 font-accent text-sm text-muted-foreground select-none ${className}`}
       aria-hidden="true"
     >
       {direction === 'right' && <ArrowRight />}
@@ -54,3 +54,4 @@ function ArrowDown() {
     </svg>
   );
 }
+

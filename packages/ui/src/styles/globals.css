@@ -183,9 +183,13 @@
       oklch(0.92 0.12 80 / 0.5) 60%
     );
   }
-  /* Sketch font utility */
+  /* Sketch font — Caveat, used only for the TenderEval logo wordmark */
   .font-sketch {
-    font-family: 'Caveat', cursive;
+    font-family: var(--font-sketch), 'Caveat', cursive;
+  }
+  /* Accent font — Space Grotesk, used for nav labels, hero text, buttons, annotations */
+  .font-accent {
+    font-family: var(--font-accent), 'Space Grotesk', sans-serif;
   }
 }
 

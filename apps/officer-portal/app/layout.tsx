@@ -1,15 +1,24 @@
 import * as React from 'react';
 import type { Metadata } from 'next';
-import { Caveat } from 'next/font/google';
+import { Caveat, Space_Grotesk } from 'next/font/google';
 
 import '@workspace/ui/globals.css';
 import { Toaster } from '@workspace/ui/components/sonner';
 import { ThemeProvider } from '@workspace/ui/hooks/use-theme';
 
+// Caveat: kept exclusively for the TenderEval logo wordmark
 const caveat = Caveat({
   subsets: ['latin'],
   weight: ['400', '600', '700'],
   variable: '--font-sketch',
+  display: 'swap',
+});
+
+// Space Grotesk: replaces Caveat for nav labels, hero text, buttons, annotations
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-accent',
   display: 'swap',
 });
 
@@ -30,7 +39,7 @@ export default function RootLayout(
 ): React.JSX.Element {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${caveat.variable} min-h-dvh bg-background text-foreground antialiased`}>
+      <body className={`${caveat.variable} ${spaceGrotesk.variable} min-h-dvh bg-background text-foreground antialiased`}>
         {/* Hidden SVG filter for sketch border effect on landing page */}
         <svg className="absolute size-0 overflow-hidden" aria-hidden="true" focusable="false">
           <defs>
