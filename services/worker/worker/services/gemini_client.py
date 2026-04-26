@@ -14,7 +14,11 @@ class GeminiClient:
     @property
     def client(self):
         if self._client is None:
-            self._client = genai.Client(api_key=settings.gemini_api_key)
+            # http_options forces v1 endpoint — gemini-2.5-flash is not on v1beta
+            self._client = genai.Client(
+                api_key=settings.gemini_api_key,
+                http_options={"api_version": "v1"},
+            )
         return self._client
 
     def _generate(self, prompt: str, retries: int = 3) -> str:

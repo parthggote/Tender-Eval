@@ -281,3 +281,27 @@ export async function deleteTenderDocument(tenderId: string, documentId: string)
     throw new Error(text || 'Failed to delete document');
   }
 }
+
+export async function deleteTender(agencySlug: string, tenderId: string): Promise<void> {
+  const session = await dedupedAuth();
+  if (!session?.user?.id) throw new Error('Not authenticated');
+
+  const timestamp = Date.now().toString();
+  const signature = createHmac('sha256', process.env.AUTH_SECRET || 'dev-secret')
+    .update(`${session.user.id}.${timestamp}`)
+    .digest('hex');
+
+  const response = await fetch(`${API_BASE_URL}/agencies/${agencySlug}/tenders/${tenderId}`, {
+    method: 'DELETE',
+    headers: {
+      'X-User-Id': session.user.id,
+      'X-User-Timestamp': timestamp,
+      'X-User-Signature': signature,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to delete tender');
+  }
+}

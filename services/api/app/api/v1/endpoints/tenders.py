@@ -116,6 +116,34 @@ def _safe_filename(name: str) -> str:
     return base
 
 
+@router.delete("/agencies/{agency_slug}/tenders/{tender_id}")
+def delete_tender(
+    agency_slug: str,
+    tender_id: str,
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_timestamp: str | None = Header(default=None, alias="X-User-Timestamp"),
+    x_user_signature: str | None = Header(default=None, alias="X-User-Signature"),
+) -> dict:
+    user_id = verify_signed_user_context(user_id=x_user_id, timestamp_ms=x_user_timestamp, signature_hex=x_user_signature)
+    try:
+        tender_uuid = uuid.UUID(tender_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid tender id.") from exc
+
+    tender = _require_tender_access(db, user_id=user_id, tender_id=tender_uuid)
+
+    _append_audit_entry(
+        db, agency_id=tender.agency_id, tender_id=tender_uuid,
+        actor_user_id=user_id, action="DELETE_TENDER",
+        payload={"tenderId": tender_id, "title": tender.title},
+    )
+
+    db.delete(tender)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/agencies/{agency_slug}/tenders", response_model=list[TenderSummaryOut])
 def list_tenders_for_agency(
     agency_slug: str,
