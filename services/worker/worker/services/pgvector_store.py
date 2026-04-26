@@ -18,17 +18,19 @@ def _get_session():
 
 
 class PgVectorStore:
-    """Stores and searches 768-dim embeddings (Gemini text-embedding-004) in Postgres via pgvector."""
+    """Stores and searches 768-dim embeddings (Gemini gemini-embedding-001) in Postgres via pgvector."""
 
     def upsert_passages(self, bidder_id: str, document_id: str, passages: list[dict]):
         with _get_session() as db:
             for p in passages:
+                # Use CAST() instead of ::vector to avoid SQLAlchemy parsing :: as param separator
                 db.execute(
                     text("""
                         INSERT INTO passage_embedding
                             (id, bidder_id, document_id, page_number, passage_text, embedding)
                         VALUES
-                            (:id, :bidder_id, :document_id, :page_number, :text, :embedding::vector)
+                            (:id, :bidder_id, :document_id, :page_number, :passage_text,
+                             CAST(:embedding AS vector))
                         ON CONFLICT (id) DO NOTHING
                     """),
                     {
@@ -36,7 +38,7 @@ class PgVectorStore:
                         "bidder_id": bidder_id,
                         "document_id": document_id,
                         "page_number": p["page_number"],
-                        "text": p["text"],
+                        "passage_text": p["text"],
                         "embedding": str(p["embedding"]),
                     },
                 )
@@ -47,10 +49,10 @@ class PgVectorStore:
             rows = db.execute(
                 text("""
                     SELECT passage_text, page_number, document_id,
-                           1 - (embedding <=> :query::vector) AS score
+                           1 - (embedding <=> CAST(:query AS vector)) AS score
                     FROM passage_embedding
                     WHERE bidder_id = :bidder_id
-                    ORDER BY embedding <=> :query::vector
+                    ORDER BY embedding <=> CAST(:query AS vector)
                     LIMIT :limit
                 """),
                 {
