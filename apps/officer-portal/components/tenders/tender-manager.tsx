@@ -7,7 +7,7 @@ import {
   FileIcon, CpuIcon, PlayIcon, CheckCircle2Icon, ZapIcon,
   ExternalLinkIcon, AlertCircleIcon, RefreshCwIcon,
   PanelRightCloseIcon, PanelRightOpenIcon, UploadIcon,
-  CheckIcon, Loader2Icon,
+  CheckIcon, Loader2Icon, Trash2Icon,
 } from 'lucide-react';
 import { Button } from '@workspace/ui/components/button';
 import { Badge } from '@workspace/ui/components/badge';
@@ -18,7 +18,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@workspace/ui/comp
 import {
   getTenderDocuments, getTenderCriteria, getSignedUrl,
   triggerCriteriaExtraction, triggerEvaluation, getJobStatus,
-  uploadTenderDocument,
+  uploadTenderDocument, deleteTenderDocument,
 } from '~/lib/internal-api';
 import { cn } from '@workspace/ui/lib/utils';
 import { TenderDocumentUpload } from '~/components/tenders/tender-document-upload';
@@ -27,6 +27,10 @@ import { TenderSetupDialog } from '~/components/tenders/tender-setup-dialog';
 import { TenderManagerSkeleton } from '~/components/tenders/tender-manager-skeleton';
 import { templateStore, CriteriaTemplate } from '~/lib/template-store';
 import { UploadPipeline } from '~/components/tenders/upload-pipeline';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@workspace/ui/components/alert-dialog';
 
 export type TenderManagerProps = { tender: any; agencySlug: string; initialSetup?: 'upload' | 'template' };
 
@@ -252,6 +256,20 @@ export function TenderManager({ tender, agencySlug, initialSetup }: TenderManage
     toast.success('Criteria extracted successfully.');
     await fetchData();
     setTimeout(() => { setPipeline(null); setSetupChoice('done'); }, 1500);
+  };
+
+  const handleDeleteDoc = async (docId: string, objectKey: string) => {
+    try {
+      await deleteTenderDocument(tenderId, docId);
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      if (activeDocKey === objectKey) {
+        setActiveDocKey(null);
+        setActiveDocUrl(null);
+      }
+      toast.success('Document removed.');
+    } catch {
+      toast.error('Could not remove document.');
+    }
   };
 
   const handleRetryPreview = async () => {
@@ -492,23 +510,55 @@ export function TenderManager({ tender, agencySlug, initialSetup }: TenderManage
                 const isActive = doc.objectKey === activeDocKey;
                 const { label, variant } = docStatusLabel(doc.status);
                 return (
-                  <button key={doc.id} type="button" onClick={() => handleSelectDoc(doc)}
+                  <div key={doc.id}
                     className={cn(
-                      'w-full flex items-center gap-3 p-2.5 rounded-md border text-left transition-colors',
+                      'group w-full flex items-center gap-3 p-2.5 rounded-md border text-left transition-colors',
                       isActive ? 'bg-accent border-accent-foreground/20' : 'bg-background border-border hover:bg-muted/50'
                     )}
                   >
-                    <div className={cn('size-7 rounded-md flex items-center justify-center shrink-0',
-                      isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                    )}>
-                      <FileIcon className="size-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium truncate">{doc.originalFilename ?? doc.objectKey}</p>
-                      <Badge variant={variant} className="text-[10px] h-4 mt-0.5">{label}</Badge>
-                    </div>
-                    <ExternalLinkIcon className="size-3.5 text-muted-foreground/40 shrink-0" />
-                  </button>
+                    {/* Clickable area */}
+                    <button type="button" onClick={() => handleSelectDoc(doc)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                      <div className={cn('size-7 rounded-md flex items-center justify-center shrink-0',
+                        isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                      )}>
+                        <FileIcon className="size-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium truncate">{doc.originalFilename ?? doc.objectKey}</p>
+                        <Badge variant={variant} className="text-[10px] h-4 mt-0.5">{label}</Badge>
+                      </div>
+                    </button>
+
+                    {/* Delete button — visible on hover */}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          type="button"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground/40"
+                          aria-label="Remove document"
+                        >
+                          <Trash2Icon className="size-3.5" />
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remove document?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete <span className="font-medium">{doc.originalFilename ?? 'this document'}</span> and its extracted pages. This cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => handleDeleteDoc(doc.id, doc.objectKey)}
+                          >
+                            Remove
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 );
               })}
               {documents.length === 0 && (

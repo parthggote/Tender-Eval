@@ -292,6 +292,45 @@ def upload_tender_document(
     return {"documentId": str(doc.id), "objectKey": object_key}
 
 
+@router.delete("/tenders/{tender_id}/documents/{document_id}")
+def delete_tender_document(
+    tender_id: str,
+    document_id: str,
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_timestamp: str | None = Header(default=None, alias="X-User-Timestamp"),
+    x_user_signature: str | None = Header(default=None, alias="X-User-Signature"),
+) -> dict:
+    user_id = verify_signed_user_context(user_id=x_user_id, timestamp_ms=x_user_timestamp, signature_hex=x_user_signature)
+    tender_uuid = uuid.UUID(tender_id)
+    doc_uuid = uuid.UUID(document_id)
+    tender = _require_tender_access(db, user_id=user_id, tender_id=tender_uuid)
+
+    doc = db.get(TenderDocument, doc_uuid)
+    if not doc or doc.tender_id != tender_uuid:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Delete from storage
+    try:
+        storage_service.delete_file(doc.object_key)
+    except Exception as e:
+        print(f"[storage] delete failed for {doc.object_key}: {e}")
+
+    db.delete(doc)
+    db.commit()
+
+    _append_audit_entry(
+        db,
+        agency_id=tender.agency_id,
+        tender_id=tender_uuid,
+        actor_user_id=user_id,
+        action="DELETE_TENDER_DOCUMENT",
+        payload={"tenderId": tender_id, "documentId": document_id},
+    )
+
+    return {"ok": True}
+
+
 @router.post("/tenders/{tender_id}/criteria/extract", response_model=CriteriaExtractOut)
 def extract_criteria(
     tender_id: str,

@@ -58,6 +58,13 @@ def ocr_document(document_id: str) -> dict:
             bidder = db.get(Bidder, doc.bidder_id)
             if bidder:
                 index_bidder_documents.delay(str(bidder.tender_id), str(doc.bidder_id))
+        elif kind == "TENDER":
+            # Chain: after OCR succeeds, auto-trigger criteria extraction
+            # Small delay to allow any other docs being uploaded to also finish OCR
+            extract_criteria.apply_async(
+                args=[str(doc.tender_id)],
+                countdown=3  # 3s grace period
+            )
 
         return {"ok": True, "pageCount": len(pages)}
     finally:
@@ -95,8 +102,8 @@ def index_bidder_documents(tender_id: str, bidder_id: str) -> dict:
         db.close()
 
 
-@celery.task(name="tendereval.extract_criteria")
-def extract_criteria(tender_id: str) -> dict:
+@celery.task(name="tendereval.extract_criteria", bind=True, max_retries=3)
+def extract_criteria(self, tender_id: str) -> dict:
     from sqlalchemy import select
     from app.db.models import TenderDocument, DocumentPage, Criterion, CriterionExtractionRun, ProcessingStatus
     from worker.services.gemini_client import gemini_client
@@ -124,12 +131,12 @@ def extract_criteria(tender_id: str) -> dict:
         ).scalars().all()
 
         if not pages:
-            print(f"[extract_criteria] No text found for tender {tender_id}")
+            # OCR may still be running — retry after 15s (up to 3 times = 45s total wait)
+            print(f"[extract_criteria] No text yet for tender {tender_id}, retrying…")
             if run:
-                run.status = ProcessingStatus.FAILED.value
-                run.finished_at = datetime.utcnow()
+                run.status = ProcessingStatus.PENDING.value
                 db.commit()
-            return {"error": "No text found for extraction"}
+            raise self.retry(countdown=15)
 
         full_text = "\n".join(p.text for p in pages)
         print(f"[extract_criteria] {len(full_text)} chars, calling Gemini…")
@@ -152,7 +159,7 @@ def extract_criteria(tender_id: str) -> dict:
         if run:
             run.status = ProcessingStatus.SUCCEEDED.value
             run.finished_at = datetime.utcnow()
-            run.model = "gemini-2.0-flash"
+            run.model = "gemini-1.5-flash"
         db.commit()
 
         return {"ok": True, "criteriaCount": len(criteria_data)}

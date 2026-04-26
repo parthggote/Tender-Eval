@@ -17,8 +17,10 @@ class StorageService:
             file=data,
             file_options={"content-type": content_type, "upsert": "true"},
         )
-        # Return public URL
         return f"{settings.supabase_url}/storage/v1/object/public/{self.bucket}/{object_name}"
+
+    def delete_file(self, object_name: str) -> None:
+        self.client.storage.from_(self.bucket).remove([object_name])
 
     def get_signed_url(self, object_name: str, expires_minutes: int = 30) -> str:
         res = self.client.storage.from_(self.bucket).create_signed_url(

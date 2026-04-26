@@ -257,3 +257,27 @@ export async function updateAgency(agencySlug: string, formData: FormData): Prom
   }
   return AgencyWorkspaceSchema.parse(await response.json());
 }
+
+export async function deleteTenderDocument(tenderId: string, documentId: string): Promise<void> {
+  const session = await dedupedAuth();
+  if (!session?.user?.id) throw new Error('Not authenticated');
+
+  const timestamp = Date.now().toString();
+  const signature = createHmac('sha256', process.env.AUTH_SECRET || 'dev-secret')
+    .update(`${session.user.id}.${timestamp}`)
+    .digest('hex');
+
+  const response = await fetch(`${API_BASE_URL}/tenders/${tenderId}/documents/${documentId}`, {
+    method: 'DELETE',
+    headers: {
+      'X-User-Id': session.user.id,
+      'X-User-Timestamp': timestamp,
+      'X-User-Signature': signature,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to delete document');
+  }
+}
