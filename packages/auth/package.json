@@ -34,6 +34,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./internal": "./src/internal.ts",
-    "./keys": "./keys.ts"
+    "./keys": "./keys.ts",
+    "./utils": "./utils.ts"
   }
 }
