@@ -6,6 +6,12 @@ import { AuthError } from 'next-auth';
 import { signIn } from '@workspace/auth';
 import { baseUrl, getPathname, routes } from '@workspace/routes';
 
+export async function googleSignIn(): Promise<void> {
+  await signIn('google', {
+    redirectTo: getPathname(routes.portal.agencies.Index, baseUrl.Portal),
+  });
+}
+
 export async function credentialSignIn(formData: FormData): Promise<void> {
   const email = String(formData.get('email') ?? '');
   const password = String(formData.get('password') ?? '');

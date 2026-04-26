@@ -1,6 +1,7 @@
 import { cache } from 'react';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import Google from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
@@ -33,6 +34,10 @@ export const authConfig = {
     signOut: getPathname(routes.portal.auth.SignIn, baseUrl.Portal)
   },
   providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    }),
     Credentials({
       name: 'Credentials',
       credentials: {
