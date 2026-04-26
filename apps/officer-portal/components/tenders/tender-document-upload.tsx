@@ -34,6 +34,7 @@ export function TenderDocumentUpload({
         onChange={handleFileChange}
         accept=".pdf"
         aria-label="Upload PDF document"
+        data-upload-trigger
       />
       <Button
         size="sm"

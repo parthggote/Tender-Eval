@@ -6,6 +6,7 @@ import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { PageHeader } from '~/components/layout/page-header';
 import { SketchEmpty } from '~/components/ui/sketch-empty';
+import { DoodleArrow } from '~/components/ui/doodle-arrow';
 import {
   ClipboardListIcon,
   FlagIcon,
@@ -100,11 +101,14 @@ export default async function DashboardPage({
             </CardHeader>
             <CardContent className="p-0">
               {auditLogs.length === 0 ? (
-                <SketchEmpty
-                  variant="chart"
-                  title="No activity yet"
-                  description="System and officer actions will appear here as you use the platform."
-                />
+                <div className="relative py-4">
+                  <DoodleArrow direction="down" className="absolute -top-2 left-1/2 -translate-x-1/2" />
+                  <SketchEmpty
+                    variant="chart"
+                    title="No activity yet"
+                    description="System and officer actions will appear here as you use the platform."
+                  />
+                </div>
               ) : (
                 <div className="divide-y divide-border">
                   {auditLogs.slice(0, 8).map((log) => (
@@ -142,11 +146,14 @@ export default async function DashboardPage({
             </CardHeader>
             <CardContent className="p-0">
               {tenders.length === 0 ? (
-                <SketchEmpty
-                  variant="document"
-                  title="No tenders yet"
-                  description="Create your first tender to get started."
-                />
+                <div className="relative py-4">
+                  <DoodleArrow direction="down-left" className="absolute -top-2 left-1/2 -translate-x-1/2" />
+                  <SketchEmpty
+                    variant="document"
+                    title="No tenders yet"
+                    description="Create your first tender to get started."
+                  />
+                </div>
               ) : (
                 <div className="divide-y divide-border">
                   {tenders.slice(0, 5).map((t) => (

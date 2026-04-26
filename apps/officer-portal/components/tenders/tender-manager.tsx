@@ -281,8 +281,14 @@ export function TenderManager({ tender, agencySlug }: TenderManagerProps): React
               toast.success(`Applied template: ${template.name}`);
               setSetupChoice('done');
             } else {
-              // User chose upload — stay on main UI, they'll use the upload button
+              // User chose upload — go straight to upload, open file picker
               setSetupChoice('done');
+              setInspectorOpen(true);
+              // Trigger file input after state settles
+              setTimeout(() => {
+                const input = document.querySelector<HTMLInputElement>('input[data-upload-trigger]');
+                input?.click();
+              }, 100);
             }
           }}
         />

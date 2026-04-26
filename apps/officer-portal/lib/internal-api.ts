@@ -231,3 +231,29 @@ export async function uploadBidderDocument(tenderId: string, bidderId: string, f
     throw new Error(`Upload failed: ${text}`);
   }
 }
+
+export async function updateAgency(agencySlug: string, formData: FormData): Promise<AgencyWorkspace> {
+  const session = await dedupedAuth();
+  if (!session?.user?.id) throw new Error('Not authenticated');
+
+  const timestamp = Date.now().toString();
+  const signature = createHmac('sha256', process.env.AUTH_SECRET || 'dev-secret')
+    .update(`${session.user.id}.${timestamp}`)
+    .digest('hex');
+
+  const response = await fetch(`${API_BASE_URL}/agencies/${agencySlug}`, {
+    method: 'PATCH',
+    headers: {
+      'X-User-Id': session.user.id,
+      'X-User-Timestamp': timestamp,
+      'X-User-Signature': signature,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to update agency');
+  }
+  return AgencyWorkspaceSchema.parse(await response.json());
+}

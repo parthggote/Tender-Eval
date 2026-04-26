@@ -7,6 +7,7 @@ import { Separator } from '@workspace/ui/components/separator';
 import { PageHeader } from '~/components/layout/page-header';
 import { FlagIcon, ArrowRightIcon, CheckCircle2Icon } from 'lucide-react';
 import { SketchEmpty } from '~/components/ui/sketch-empty';
+import { DoodleArrow } from '~/components/ui/doodle-arrow';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,11 +78,14 @@ export default async function ReviewQueuePage({
           </div>
 
           {openCases.length === 0 ? (
-            <SketchEmpty
-              variant="inbox"
-              title="Queue is clear"
-              description="No items require review at this time."
-            />
+            <div className="relative">
+              <DoodleArrow direction="right" className="absolute -top-8 left-1/2 -translate-x-1/2" />
+              <SketchEmpty
+                variant="inbox"
+                title="Queue is clear"
+                description="No items require review at this time."
+              />
+            </div>
           ) : (
             <div className="rounded-lg border bg-card overflow-hidden divide-y divide-border">
               {openCases.map((c) => (

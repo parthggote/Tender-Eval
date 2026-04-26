@@ -18,6 +18,7 @@ import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { createTender } from '~/lib/internal-api';
+import { replaceTenderId, replaceAgencySlug, routes } from '@workspace/routes';
 
 export function CreateTenderDialog({ agencySlug }: { agencySlug: string }) {
   const router = useRouter();
@@ -34,9 +35,14 @@ export function CreateTenderDialog({ agencySlug }: { agencySlug: string }) {
     const description = formData.get('description') as string;
 
     try {
-      await createTender(agencySlug, { title, reference, description });
+      const tender = await createTender(agencySlug, { title, reference, description });
       setOpen(false);
-      router.refresh();
+      router.push(
+        replaceTenderId(
+          replaceAgencySlug(routes.portal.agencies.agencySlug.tenders.tenderId.overview, agencySlug),
+          tender.id
+        )
+      );
       toast.success('Tender created successfully.');
     } catch (error) {
       console.error(error);

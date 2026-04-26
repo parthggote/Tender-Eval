@@ -8,6 +8,7 @@ import {
 import { FileTextIcon, DownloadIcon } from 'lucide-react';
 import { PageHeader } from '~/components/layout/page-header';
 import { SketchEmpty } from '~/components/ui/sketch-empty';
+import { DoodleArrow } from '~/components/ui/doodle-arrow';
 
 // #RP-3: map raw status to readable labels
 function reportStatusLabel(status: string): { label: string; variant: 'secondary' | 'outline' | 'destructive' } {
@@ -111,11 +112,14 @@ export default async function ReportsPage({
             </Table>
           </div>
         ) : (
-          <SketchEmpty
-            variant="document"
-            title="No reports yet"
-            description="Reports are generated after a tender evaluation completes."
-          />
+          <div className="relative">
+            <DoodleArrow direction="down" className="absolute -top-6 left-1/2 -translate-x-1/2" />
+            <SketchEmpty
+              variant="document"
+              title="No reports yet"
+              description="Reports are generated after a tender evaluation completes."
+            />
+          </div>
         )}
       </div>
     </>

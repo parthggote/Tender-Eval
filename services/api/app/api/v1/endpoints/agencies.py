@@ -14,6 +14,7 @@ from app.db.models import AgencyMembership, AgencyWorkspace, AuditEntry, Officer
 from app.db.session import get_db
 from app.schemas.dtos import AgencyWorkspaceOut, ReviewCaseOut, AuditEntryOut, iso, ReportExportOut
 from app.services.storage import storage_service
+from app.services.storage import storage_service
 
 router = APIRouter()
 
@@ -104,6 +105,55 @@ def list_agencies(
     ).scalars().all()
 
     return [AgencyWorkspaceOut(id=str(a.id), slug=a.slug, name=a.name, logoUrl=a.logo_url) for a in agencies]
+
+
+@router.patch("/agencies/{agency_slug}", response_model=AgencyWorkspaceOut)
+async def update_agency(
+    agency_slug: str,
+    name: str | None = Form(None),
+    logo: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_timestamp: str | None = Header(default=None, alias="X-User-Timestamp"),
+    x_user_signature: str | None = Header(default=None, alias="X-User-Signature"),
+) -> AgencyWorkspaceOut:
+    user_id = verify_signed_user_context(user_id=x_user_id, timestamp_ms=x_user_timestamp, signature_hex=x_user_signature)
+
+    agency = db.execute(select(AgencyWorkspace).where(AgencyWorkspace.slug == agency_slug)).scalars().first()
+    if not agency:
+        raise HTTPException(status_code=404, detail="Agency not found")
+
+    # Check admin membership
+    membership = db.execute(select(AgencyMembership).where(
+        AgencyMembership.agency_id == agency.id,
+        AgencyMembership.user_id == user_id,
+        AgencyMembership.role == OfficerRole.SYSTEM_ADMIN.value
+    )).scalars().first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Only admins can update agency settings")
+
+    if name:
+        agency.name = name
+
+    if logo and logo.filename:
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/svg+xml"]
+        if logo.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail="Logo must be an image (JPEG, PNG, WebP, or SVG)")
+        ext = logo.filename.split(".")[-1] if "." in logo.filename else "png"
+        object_key = f"agencies/{agency_slug}/logo.{ext}"
+        content = await logo.read()
+        agency.logo_url = storage_service.upload_file(object_key, content, logo.content_type or "image/png")
+
+    agency.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(agency)
+
+    _append_audit_entry(
+        db, agency_id=agency.id, tender_id=None, actor_user_id=user_id,
+        action="UPDATE_AGENCY", payload={"agencySlug": agency.slug, "updatedName": name, "updatedLogo": logo is not None and logo.filename is not None},
+    )
+
+    return AgencyWorkspaceOut(id=str(agency.id), name=agency.name, slug=agency.slug, logoUrl=agency.logo_url)
 
 
 @router.post("/agencies", response_model=AgencyWorkspaceOut)

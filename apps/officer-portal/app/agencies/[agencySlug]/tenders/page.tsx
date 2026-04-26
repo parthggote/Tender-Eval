@@ -17,6 +17,7 @@ import { PageHeader } from '~/components/layout/page-header';
 import { getTendersForAgency } from '~/lib/internal-api';
 import { CreateTenderDialog } from '~/components/tenders/create-tender-dialog';
 import { SketchEmpty } from '~/components/ui/sketch-empty';
+import { DoodleArrow } from '~/components/ui/doodle-arrow';
 
 type PageProps = {
   params: Promise<{ agencySlug: string }>;
@@ -102,7 +103,8 @@ export default async function TendersPage({ params }: PageProps): Promise<React.
             </Table>
           </div>
         ) : (
-          <div className="flex flex-1 rounded-lg border border-dashed overflow-hidden">
+          <div className="flex flex-1 flex-col items-center justify-center py-20 border border-dashed rounded-lg text-center gap-4 relative">
+            <DoodleArrow direction="down" className="absolute top-6 left-1/2 -translate-x-1/2" />
             <SketchEmpty
               variant="document"
               title="No tenders yet"

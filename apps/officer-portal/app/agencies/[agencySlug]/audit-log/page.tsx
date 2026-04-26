@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from '@workspace/ui/components/tooltip';
 import { SketchEmpty } from '~/components/ui/sketch-empty';
+import { DoodleArrow } from '~/components/ui/doodle-arrow';
 import type { AuditEntry, TenderSummary } from '@workspace/dtos';
 import { replaceAgencySlug, replaceTenderId, routes } from '@workspace/routes';
 
@@ -85,11 +86,14 @@ export default async function AuditLogPage({
         </div>
 
         {logs.length === 0 ? (
-          <SketchEmpty
-            variant="search"
-            title="No audit entries yet"
-            description="System and officer actions will appear here."
-          />
+          <div className="relative">
+            <DoodleArrow direction="down" className="absolute -top-6 left-1/2 -translate-x-1/2" />
+            <SketchEmpty
+              variant="search"
+              title="No audit entries yet"
+              description="System and officer actions will appear here."
+            />
+          </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sortedKeys.map((key) => {

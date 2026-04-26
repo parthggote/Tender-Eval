@@ -104,9 +104,16 @@ def _require_tender_access(db: Session, *, user_id: str, tender_id: uuid.UUID) -
 
 
 def _safe_filename(name: str) -> str:
+    """Sanitize filename and deduplicate extensions (e.g. file.pdf.pdf → file.pdf)."""
     base = name.strip().replace("\\", "_").replace("/", "_")
     base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
-    return base[:200] if base else "document"
+    base = base[:200] if base else "document"
+    # Deduplicate repeated extensions: file.pdf.pdf → file.pdf
+    stem = Path(base).stem
+    suffix = Path(base).suffix.lower()
+    if suffix and stem.lower().endswith(suffix):
+        base = stem  # strip the duplicate
+    return base
 
 
 @router.get("/agencies/{agency_slug}/tenders", response_model=list[TenderSummaryOut])
