@@ -21,7 +21,7 @@ class GeminiClient:
         for attempt in range(retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash-lite-preview-06-17",  # free tier: 30 RPM, 1000 RPD
+                    model="gemini-2.5-flash",  # free tier: 10 RPM, 250 RPD
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
