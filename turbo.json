@@ -3,6 +3,7 @@
   "ui": "tui",
   "globalEnv": [
     "AUTH_SECRET",
+    "NEXTAUTH_URL",
     "DATABASE_URL",
     "NEXT_PUBLIC_PORTAL_URL",
     "NEXT_PUBLIC_INTERNAL_API_URL",
