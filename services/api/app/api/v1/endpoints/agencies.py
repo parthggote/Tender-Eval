@@ -137,12 +137,17 @@ async def update_agency(
 
     if logo and logo.filename:
         allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/svg+xml"]
-        if logo.content_type not in allowed_types:
+        content_type = (logo.content_type or "").lower()
+        if content_type not in allowed_types:
             raise HTTPException(status_code=400, detail="Logo must be an image (JPEG, PNG, WebP, or SVG)")
         ext = logo.filename.split(".")[-1] if "." in logo.filename else "png"
         object_key = f"agencies/{agency_slug}/logo.{ext}"
         content = await logo.read()
-        agency.logo_url = storage_service.upload_file(object_key, content, logo.content_type or "image/png")
+        # Skip if the browser sent an empty file part
+        if not content:
+            pass
+        else:
+            agency.logo_url = storage_service.upload_file(object_key, content, content_type or "image/png")
 
     agency.updated_at = datetime.utcnow()
     db.commit()
@@ -181,7 +186,8 @@ async def create_agency(
     if logo and logo.filename:
         # Validate file type
         allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/svg+xml"]
-        if logo.content_type not in allowed_types:
+        content_type = (logo.content_type or "").lower()
+        if content_type not in allowed_types:
             raise HTTPException(status_code=400, detail="Logo must be an image (JPEG, PNG, WebP, or SVG)")
         
         # Generate unique filename
@@ -190,7 +196,8 @@ async def create_agency(
         
         # Upload to Supabase Storage
         content = await logo.read()
-        logo_url = storage_service.upload_file(object_key, content, logo.content_type or "image/png")
+        if content:
+            logo_url = storage_service.upload_file(object_key, content, content_type or "image/png")
     
     agency = AgencyWorkspace(name=name, slug=slug, logo_url=logo_url)
     db.add(agency)

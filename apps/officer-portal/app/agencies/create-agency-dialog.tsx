@@ -89,6 +89,11 @@ export function CreateAgencyDialog({ triggerVariant = 'outline' }: CreateAgencyD
     }
 
     try {
+      // Remove logo from FormData if no file was actually selected
+      const logoFile = formData.get('logo') as File | null;
+      if (!logoFile || logoFile.size === 0) {
+        formData.delete('logo');
+      }
       await createAgencyAction(formData);
       setOpen(false);
       setLogoPreview(null);

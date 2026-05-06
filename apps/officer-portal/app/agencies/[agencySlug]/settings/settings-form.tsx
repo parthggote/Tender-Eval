@@ -46,6 +46,11 @@ export function SettingsForm({ agency }: { agency: AgencyWorkspace }) {
     setSaving(true);
     try {
       const formData = new FormData(e.currentTarget);
+      // Remove logo from FormData if no file was actually selected
+      const logoFile = formData.get('logo') as File | null;
+      if (!logoFile || logoFile.size === 0) {
+        formData.delete('logo');
+      }
       if (logoCleared) formData.set('clear_logo', 'true');
       await updateAgency(agency.slug, formData);
       toast.success('Agency profile updated.');
