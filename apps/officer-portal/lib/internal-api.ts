@@ -31,6 +31,7 @@ import type {
   SignedUrl,
   ReportExportDto
 } from '@workspace/dtos';
+import { ReviewAction } from '@workspace/dtos';
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_INTERNAL_API_URL || 'http://localhost:8000'}/api/v1`;
 
@@ -120,7 +121,7 @@ export async function triggerCriteriaExtraction(tenderId: string): Promise<{ ext
   return fetchInternal(`/tenders/${tenderId}/criteria/extract`, { method: 'POST' });
 }
 
-export async function updateCriterion(tenderId: string, criterionId: string, data: any): Promise<Criterion> {
+export async function updateCriterion(tenderId: string, criterionId: string, data: Partial<Pick<Criterion, 'text' | 'type' | 'threshold' | 'mandatory' | 'sourcePage'>>): Promise<Criterion> {
   return fetchInternal(`/tenders/${tenderId}/criteria/${criterionId}`, {
     method: 'PUT',
     body: JSON.stringify(data)
@@ -147,7 +148,7 @@ export async function getReviewQueue(agencySlug: string): Promise<ReviewCase[]> 
   return fetchInternal(`/agencies/${agencySlug}/review-queue`, {}, z.array(ReviewCaseSchema));
 }
 
-export async function decideReviewCase(caseId: string, decision: any): Promise<void> {
+export async function decideReviewCase(caseId: string, decision: { action: ReviewAction; note?: string }): Promise<void> {
   await fetchInternal(`/review-cases/${caseId}/decision`, {
     method: 'POST',
     body: JSON.stringify(decision)

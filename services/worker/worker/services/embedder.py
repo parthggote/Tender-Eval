@@ -11,18 +11,27 @@ _OUTPUT_DIM = 768
 
 class EmbedderService:
     def __init__(self):
-        self._client = None
+        self._clients: dict[str, genai.Client] = {}
 
-    @property
-    def client(self):
-        if self._client is None:
-            self._client = genai.Client(api_key=settings.gemini_api_key)
-        return self._client
+    def _get_client(self, api_key: str) -> genai.Client:
+        if api_key not in self._clients:
+            self._clients[api_key] = genai.Client(api_key=api_key)
+        return self._clients[api_key]
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        api_keys = settings.get_gemini_keys()
+        if not api_keys:
+            raise RuntimeError(
+                "[embedder] No Gemini API key configured. "
+                "Set GEMINI_API_KEY or GEMINI_API_KEYS in the worker environment."
+            )
+
         results = []
-        for text in texts:
-            response = self.client.models.embed_content(
+        for i, text in enumerate(texts):
+            # Round-robin across available keys
+            api_key = api_keys[i % len(api_keys)]
+            client = self._get_client(api_key)
+            response = client.models.embed_content(
                 model=_MODEL,
                 contents=text,
                 config=types.EmbedContentConfig(

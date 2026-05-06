@@ -8,9 +8,9 @@ from worker.config import settings
 
 class GeminiClient:
     def __init__(self):
-        # Support comma-separated list of API keys for round-robin fallback
-        raw_keys = getattr(settings, "gemini_api_keys", "") or settings.gemini_api_key
-        self._api_keys: list[str] = [k.strip() for k in raw_keys.split(",") if k.strip()]
+        # Delegate key resolution to settings — supports both GEMINI_API_KEY and
+        # GEMINI_API_KEYS (comma-separated) with GEMINI_API_KEYS taking precedence.
+        self._api_keys: list[str] = settings.get_gemini_keys()
         self._clients: dict[str, genai.Client] = {}
 
     def _get_client(self, api_key: str) -> genai.Client:

@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     def strip_whitespace(cls, v: str) -> str:
         return v.strip() if isinstance(v, str) else v
 
+    def get_gemini_keys(self) -> list[str]:
+        """
+        Return a list of valid API keys.
+        Prefers GEMINI_API_KEYS (comma-separated) over GEMINI_API_KEY.
+        Falls back to GEMINI_API_KEY if GEMINI_API_KEYS is not set.
+        """
+        source = self.gemini_api_keys or self.gemini_api_key
+        return [k.strip() for k in source.split(",") if k.strip()]
+
+    def get_primary_gemini_key(self) -> str:
+        """Return the first available API key, or empty string if none configured."""
+        keys = self.get_gemini_keys()
+        return keys[0] if keys else ""
+
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(__file__), ".env"),
         extra="ignore",
