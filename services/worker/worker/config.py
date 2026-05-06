@@ -13,9 +13,13 @@ class Settings(BaseSettings):
     supabase_service_key: str = ""
     supabase_bucket: str = "tendereval"
     gemini_api_key: str = ""
+    # Comma-separated list of Gemini API keys for round-robin fallback.
+    # If set, takes precedence over gemini_api_key.
+    # Example: GEMINI_API_KEYS=key1,key2,key3
+    gemini_api_keys: str = ""
 
     @field_validator("internal_database_url", "redis_url", "supabase_url",
-                     "supabase_service_key", "gemini_api_key", mode="before")
+                     "supabase_service_key", "gemini_api_key", "gemini_api_keys", mode="before")
     @classmethod
     def strip_whitespace(cls, v: str) -> str:
         return v.strip() if isinstance(v, str) else v

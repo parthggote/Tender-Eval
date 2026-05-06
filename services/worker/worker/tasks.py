@@ -141,7 +141,16 @@ def extract_criteria(self, tender_id: str) -> dict:
         full_text = "\n".join(p.text for p in pages)
         print(f"[extract_criteria] {len(full_text)} chars, calling Gemini…")
 
-        criteria_data = gemini_client.extract_criteria(full_text)
+        try:
+            criteria_data = gemini_client.extract_criteria(full_text)
+        except RuntimeError as exc:
+            # Gemini unavailable / all keys exhausted — reset run and retry the task
+            print(f"[extract_criteria] Gemini call failed: {exc}, will retry task")
+            if run:
+                run.status = ProcessingStatus.PENDING.value
+                db.commit()
+            raise self.retry(countdown=30, exc=exc)
+
         print(f"[extract_criteria] Gemini returned {len(criteria_data)} criteria")
 
         for c in criteria_data:

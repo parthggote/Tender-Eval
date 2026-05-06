@@ -143,18 +143,31 @@ export function CreateAgencyDialog({ triggerVariant = 'outline' }: CreateAgencyD
             </div>
             <div className="space-y-2">
               <Label htmlFor="logo">Logo (optional)</Label>
+              {/* File input is always in the DOM so FormData includes the file on submit */}
+              <Input
+                ref={fileInputRef}
+                id="logo"
+                name="logo"
+                type="file"
+                accept="image/*"
+                onChange={handleLogoChange}
+                disabled={loading}
+                className="hidden"
+              />
               {logoPreview ? (
-                <div className="relative w-32 h-32 border rounded-lg overflow-hidden">
-                  <Image
-                    src={logoPreview}
-                    alt="Logo preview"
-                    fill
-                    className="object-contain p-2"
-                  />
+                <div className="flex items-center gap-3">
+                  <div className="relative w-32 h-32 border rounded-lg overflow-hidden shrink-0">
+                    <Image
+                      src={logoPreview}
+                      alt="Logo preview"
+                      fill
+                      className="object-contain p-2"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={clearLogo}
-                    className="absolute top-1 right-1 p-1 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90"
+                    className="p-1 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90"
                     disabled={loading}
                   >
                     <XIcon className="size-3" />
@@ -162,16 +175,6 @@ export function CreateAgencyDialog({ triggerVariant = 'outline' }: CreateAgencyD
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <Input
-                    ref={fileInputRef}
-                    id="logo"
-                    name="logo"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoChange}
-                    disabled={loading}
-                    className="hidden"
-                  />
                   <Button
                     type="button"
                     variant="outline"
