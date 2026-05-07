@@ -153,6 +153,15 @@ def extract_criteria(self, tender_id: str) -> dict:
 
         print(f"[extract_criteria] Gemini returned {len(criteria_data)} criteria")
 
+        # Cap at 20 most important criteria — prioritise mandatory ones first,
+        # then by order returned (Gemini already ranks by relevance).
+        MAX_CRITERIA = 20
+        if len(criteria_data) > MAX_CRITERIA:
+            mandatory = [c for c in criteria_data if c.get("mandatory", True)]
+            optional  = [c for c in criteria_data if not c.get("mandatory", True)]
+            criteria_data = (mandatory + optional)[:MAX_CRITERIA]
+            print(f"[extract_criteria] Capped to {MAX_CRITERIA} criteria ({len(mandatory)} mandatory)")
+
         for c in criteria_data:
             db.add(Criterion(
                 tender_id=uuid.UUID(tender_id),
@@ -176,8 +185,8 @@ def extract_criteria(self, tender_id: str) -> dict:
         db.close()
 
 
-@celery.task(name="tendereval.evaluate_tender")
-def evaluate_tender(tender_id: str) -> dict:
+@celery.task(name="tendereval.evaluate_tender", bind=True, max_retries=3)
+def evaluate_tender(self, tender_id: str) -> dict:
     from sqlalchemy import select
     from app.db.models import Criterion, Bidder, CriterionEvaluation, EvaluationRun, ProcessingStatus, ReviewCase
     from worker.services.embedder import embedder
@@ -197,6 +206,13 @@ def evaluate_tender(tender_id: str) -> dict:
             run.status = ProcessingStatus.RUNNING.value
             db.commit()
 
+        # Fail fast — no run means nothing to attach evaluations to
+        if not run:
+            raise RuntimeError(
+                f"[evaluate_tender] No PENDING EvaluationRun found for tender {tender_id}. "
+                "Trigger evaluation via the API to create one first."
+            )
+
         criteria = db.execute(
             select(Criterion).where(Criterion.tender_id == uuid.UUID(tender_id))
         ).scalars().all()
@@ -204,39 +220,95 @@ def evaluate_tender(tender_id: str) -> dict:
             select(Bidder).where(Bidder.tender_id == uuid.UUID(tender_id))
         ).scalars().all()
 
+        if not criteria or not bidders:
+            run.status = ProcessingStatus.SUCCEEDED.value
+            run.finished_at = datetime.utcnow()
+            db.commit()
+            return {"ok": True, "evaluationsCreated": 0}
+
+        # ── Optimisation 1: batch-embed ALL criteria in a single API call ──
+        print(f"[evaluate_tender] Embedding {len(criteria)} criteria in one batch…")
+        criteria_texts = [c.text for c in criteria]
+        criteria_vectors = embedder.embed(criteria_texts)  # single batched call
+        criterion_vector_map = {
+            str(c.id): criteria_vectors[i] for i, c in enumerate(criteria)
+        }
+
         count = 0
         for b in bidders:
+            # ── Optimisation 2: retrieve evidence for ALL criteria at once ──
+            evidence_map: dict[str, str] = {}
             for c in criteria:
-                query_vector = embedder.embed([c.text])[0]
-                results = pgvector_store.search(str(b.id), query_vector, limit=3)
-                evidence_text = "\n".join(r["text"] for r in results)
+                results = pgvector_store.search(
+                    str(b.id), criterion_vector_map[str(c.id)], limit=3
+                )
+                evidence_map[str(c.id)] = "\n".join(r["text"] for r in results) or "No evidence found."
 
-                eval_result = gemini_client.evaluate_criterion(c.text, evidence_text)
+            # ── Optimisation 3: evaluate ALL criteria in ONE Gemini call per bidder ──
+            print(f"[evaluate_tender] Evaluating {len(criteria)} criteria for bidder {b.id} in one call…")
+            try:
+                eval_results = gemini_client.evaluate_criteria_batch(criteria, evidence_map)
+            except RuntimeError as exc:
+                print(f"[evaluate_tender] Gemini batch call failed: {exc}, will retry task")
+                run.status = ProcessingStatus.PENDING.value
+                db.commit()
+                raise self.retry(countdown=30, exc=exc)
+
+            for c in criteria:
+                result = eval_results.get(str(c.id), {
+                    "verdict": "NEEDS_REVIEW",
+                    "reason": "Batch evaluation did not return a result for this criterion.",
+                    "confidence": 0.0,
+                })
+
+                # ── Duplicate guard: skip if already evaluated in this run ──
+                existing_eval = db.execute(
+                    select(CriterionEvaluation).where(
+                        CriterionEvaluation.evaluation_run_id == run.id,
+                        CriterionEvaluation.bidder_id == b.id,
+                        CriterionEvaluation.criterion_id == c.id,
+                    )
+                ).scalars().first()
+
+                if existing_eval:
+                    count += 1
+                    continue
 
                 db.add(CriterionEvaluation(
-                    evaluation_run_id=run.id if run else uuid.uuid4(),
+                    evaluation_run_id=run.id,
                     bidder_id=b.id,
                     criterion_id=c.id,
-                    verdict=eval_result["verdict"],
-                    confidence=eval_result["confidence"],
-                    reason=eval_result["reason"],
+                    verdict=result["verdict"],
+                    confidence=result["confidence"],
+                    reason=result["reason"],
                     created_at=datetime.utcnow()
                 ))
 
-                if eval_result["verdict"] in ("NEEDS_REVIEW", "FAIL"):
-                    db.add(ReviewCase(
-                        tender_id=uuid.UUID(tender_id),
-                        bidder_id=b.id,
-                        criterion_id=c.id,
-                        status="OPEN",
-                        reason=eval_result["reason"],
-                        created_at=datetime.utcnow()
-                    ))
+                if result["verdict"] in ("NEEDS_REVIEW", "FAIL"):
+                    # Duplicate guard for ReviewCase
+                    existing_case = db.execute(
+                        select(ReviewCase).where(
+                            ReviewCase.tender_id == uuid.UUID(tender_id),
+                            ReviewCase.bidder_id == b.id,
+                            ReviewCase.criterion_id == c.id,
+                        )
+                    ).scalars().first()
+
+                    if not existing_case:
+                        db.add(ReviewCase(
+                            tender_id=uuid.UUID(tender_id),
+                            bidder_id=b.id,
+                            criterion_id=c.id,
+                            status="OPEN",
+                            reason=result["reason"],
+                            created_at=datetime.utcnow()
+                        ))
                 count += 1
 
-        if run:
-            run.status = ProcessingStatus.SUCCEEDED.value
-            run.finished_at = datetime.utcnow()
+            db.commit()  # commit per bidder so partial progress is saved
+
+        run.status = ProcessingStatus.SUCCEEDED.value
+        run.finished_at = datetime.utcnow()
         db.commit()
 
         return {"ok": True, "evaluationsCreated": count}
