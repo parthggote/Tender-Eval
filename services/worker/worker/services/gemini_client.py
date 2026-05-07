@@ -312,15 +312,17 @@ Criteria and evidence:
                         "reason": item.get("reason", ""),
                         "confidence": float(item.get("confidence", 0.5)),
                     }
-        except RuntimeError as e:
+        except (RuntimeError, Exception) as e:
             error_msg = str(e)
             # If Groq fails due to payload size, chunk the criteria and evaluate in smaller batches
             if "413" in error_msg or "Payload Too Large" in error_msg or "Request too large" in error_msg or "PAYLOAD_TOO_LARGE" in error_msg:
                 print(f"[llm] Payload too large for single batch, chunking into smaller groups...")
                 return self._evaluate_criteria_chunked(criteria, evidence_map)
-            print(f"[llm] evaluate_criteria_batch error: {e}")
-            # Defaults already populated above — just log and return them
-        except Exception as e:
+            # For RuntimeError, re-raise (could be quota exhaustion or other critical error)
+            if isinstance(e, RuntimeError):
+                print(f"[llm] evaluate_criteria_batch runtime error: {e}")
+                raise
+            # For other exceptions (JSON parse errors, etc), log and return defaults
             print(f"[llm] evaluate_criteria_batch parse error: {e}")
             # Defaults already populated above — just log and return them
 
@@ -330,6 +332,7 @@ Criteria and evidence:
         """
         Fallback method: evaluate criteria in smaller chunks when payload is too large.
         Used when Groq returns 413 Payload Too Large.
+        Adds delays between chunks to respect Groq's 12K tokens per minute rate limit.
         """
         result: dict[str, dict] = {
             str(c.id): {
@@ -341,9 +344,11 @@ Criteria and evidence:
         }
 
         # Process in chunks
+        num_chunks = (len(criteria) + chunk_size - 1) // chunk_size
         for i in range(0, len(criteria), chunk_size):
             chunk = criteria[i:i + chunk_size]
-            print(f"[llm] Evaluating chunk {i//chunk_size + 1}/{(len(criteria) + chunk_size - 1)//chunk_size} ({len(chunk)} criteria)...")
+            chunk_num = i // chunk_size + 1
+            print(f"[llm] Evaluating chunk {chunk_num}/{num_chunks} ({len(chunk)} criteria)...")
             
             # Build prompt for this chunk
             lines = []
@@ -396,8 +401,18 @@ Criteria and evidence:
                             "confidence": float(item.get("confidence", 0.5)),
                         }
             except Exception as e:
-                print(f"[llm] Chunk {i//chunk_size + 1} evaluation failed: {e}")
+                print(f"[llm] Chunk {chunk_num} evaluation failed: {e}")
                 # Keep defaults for this chunk
+
+            # Rate limiting: Groq free tier has 12K TPM (tokens per minute)
+            # Each chunk uses ~7-8K tokens. To stay under 12K TPM:
+            # - If we send 7K tokens, we need to wait ~35s before sending another 7K
+            # - Formula: wait_time = (tokens_used / tokens_per_minute) * 60
+            # - Conservative: wait 40s between chunks to ensure we don't hit the limit
+            if chunk_num < num_chunks:
+                wait_time = 40  # seconds - allows ~1.5 chunks per minute
+                print(f"[llm] Waiting {wait_time}s before next chunk to respect Groq's 12K TPM rate limit...")
+                time.sleep(wait_time)
 
         return result
 
