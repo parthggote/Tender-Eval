@@ -179,7 +179,7 @@ def extract_criteria(self, tender_id: str) -> dict:
         if run:
             run.status = ProcessingStatus.SUCCEEDED.value
             run.finished_at = datetime.utcnow()
-            run.model = "gemini-2.5-flash"
+            run.model = "gemini-2.0-flash"
         db.commit()
 
         return {"ok": True, "criteriaCount": len(criteria_data)}

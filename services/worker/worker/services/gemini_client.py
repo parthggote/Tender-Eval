@@ -49,7 +49,8 @@ class GeminiClient:
     def _generate(self, prompt: str, retries: int = 3) -> str:
         """
         Try each API key in order. On 429/503/UNAVAILABLE errors, rotate to the
-        next key before sleeping. Raises RuntimeError if all retries are exhausted.
+        next key before sleeping. Respects the retryDelay hint from the API response.
+        Raises RuntimeError if all retries are exhausted.
         """
         if not self._api_keys:
             raise RuntimeError("[gemini] No API keys configured (GEMINI_API_KEY is empty)")
@@ -62,7 +63,7 @@ class GeminiClient:
             client = self._get_client(api_key)
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",  # free tier: 1500 RPD vs 20 RPD for 2.5-flash
                     contents=prompt,
                 )
                 return response.text or ""
@@ -73,7 +74,11 @@ class GeminiClient:
                 is_unavailable = "503" in msg or "UNAVAILABLE" in msg
 
                 if is_rate_limit or is_unavailable:
-                    wait = (attempt + 1) * 10  # 10s, 20s, 30s
+                    # Try to extract retryDelay from the API error body
+                    suggested = self._parse_retry_delay(msg)
+                    # Use API hint if available, otherwise exponential backoff
+                    # Cap at 60s so we don't block the worker for a full minute per attempt
+                    wait = min(suggested if suggested else (attempt + 1) * 15, 60)
                     reason = "rate limited" if is_rate_limit else "unavailable (503)"
                     key_hint = f"key ...{api_key[-6:]}" if len(api_key) > 6 else "key"
                     print(
@@ -85,6 +90,23 @@ class GeminiClient:
                     raise
 
         raise RuntimeError(f"[gemini] All {retries} attempts failed. Last error: {last_error}")
+
+    @staticmethod
+    def _parse_retry_delay(error_msg: str) -> int | None:
+        """
+        Extract the retryDelay seconds from a Gemini API error message.
+        The API returns hints like 'retryDelay': '48s' or 'Please retry in 48.8s'.
+        Returns the delay as an integer, or None if not found.
+        """
+        # Match 'retryDelay': '48s' or "retryDelay": "48.8s"
+        m = re.search(r"['\"]retryDelay['\"]\s*:\s*['\"](\d+(?:\.\d+)?)s['\"]", error_msg)
+        if m:
+            return int(float(m.group(1))) + 1  # +1s buffer
+        # Match 'Please retry in 48.8s'
+        m = re.search(r"retry in (\d+(?:\.\d+)?)s", error_msg, re.IGNORECASE)
+        if m:
+            return int(float(m.group(1))) + 1
+        return None
 
     def _parse_json(self, raw: str) -> str:
         """Strip markdown code fences if present."""
