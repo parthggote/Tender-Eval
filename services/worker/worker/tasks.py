@@ -42,11 +42,13 @@ def ocr_document(document_id: str) -> dict:
         pages = perform_ocr(file_bytes)
 
         for p in pages:
+            # PostgreSQL text fields reject NUL bytes — strip them from OCR output
+            clean_text = p["text"].replace("\x00", "")
             db.add(DocumentPage(
                 document_id=doc.id,
                 document_kind=kind,
                 page_number=p["page_number"],
-                text=p["text"],
+                text=clean_text,
                 ocr_confidence=p["confidence"]
             ))
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+
 from google import genai
 from worker.config import settings
 
 
-import re
+# ── Prompt-injection sanitizer ────────────────────────────────────────────────
 
 _INSTRUCTION_PATTERN = re.compile(
     r"(ignore\s+(previous|above|all)\s+instructions?|"
@@ -14,6 +16,7 @@ _INSTRUCTION_PATTERN = re.compile(
     r"<\s*/?instructions?\s*>|\[INST\]|\[/INST\])",
     re.IGNORECASE,
 )
+
 
 def _sanitize_evidence(text: str) -> tuple[str, bool]:
     """
@@ -24,6 +27,11 @@ def _sanitize_evidence(text: str) -> tuple[str, bool]:
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     suspicious = bool(_INSTRUCTION_PATTERN.search(cleaned))
     return cleaned, suspicious
+
+
+# ── GeminiClient ──────────────────────────────────────────────────────────────
+
+class GeminiClient:
     def __init__(self):
         # Delegate key resolution to settings — supports both GEMINI_API_KEY and
         # GEMINI_API_KEYS (comma-separated) with GEMINI_API_KEYS taking precedence.
@@ -41,21 +49,20 @@ def _sanitize_evidence(text: str) -> tuple[str, bool]:
     def _generate(self, prompt: str, retries: int = 3) -> str:
         """
         Try each API key in order. On 429/503/UNAVAILABLE errors, rotate to the
-        next key before sleeping. Falls back gracefully if all keys are exhausted.
+        next key before sleeping. Raises RuntimeError if all retries are exhausted.
         """
         if not self._api_keys:
             raise RuntimeError("[gemini] No API keys configured (GEMINI_API_KEY is empty)")
 
-        keys = list(self._api_keys)  # copy so we can rotate
+        keys = list(self._api_keys)
         last_error: Exception | None = None
 
         for attempt in range(retries):
-            # Rotate key each attempt so a 503 on key[0] tries key[1] next
             api_key = keys[attempt % len(keys)]
             client = self._get_client(api_key)
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",  # free tier: 10 RPM, 250 RPD
+                    model="gemini-2.5-flash",
                     contents=prompt,
                 )
                 return response.text or ""
@@ -77,19 +84,18 @@ def _sanitize_evidence(text: str) -> tuple[str, bool]:
                 else:
                     raise
 
-        # All retries exhausted
         raise RuntimeError(f"[gemini] All {retries} attempts failed. Last error: {last_error}")
 
     def _parse_json(self, raw: str) -> str:
         """Strip markdown code fences if present."""
         raw = raw.strip()
         if raw.startswith("```"):
-            # Remove opening fence (```json or ```)
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-            # Remove closing fence
             if raw.endswith("```"):
                 raw = raw[:-3]
         return raw.strip()
+
+    # ── Public methods ────────────────────────────────────────────────────────
 
     def extract_criteria(self, text: str) -> list[dict]:
         prompt = f"""Extract procurement evaluation criteria from this tender document.
@@ -132,9 +138,10 @@ Tender text:
             crit_text, crit_suspicious = _sanitize_evidence(c.text)
             raw_evidence = evidence_map.get(str(c.id), "No evidence found.")
             evidence_text, ev_suspicious = _sanitize_evidence(raw_evidence)
-            trust_note = " [UNTRUSTED: possible instruction injection detected]" if ev_suspicious or crit_suspicious else ""
+            trust_note = " [UNTRUSTED: possible instruction injection detected]" \
+                if ev_suspicious or crit_suspicious else ""
             lines.append(
-                f'{i+1}. [ID:{str(c.id)}] {crit_text}\n'
+                f'{i + 1}. [ID:{str(c.id)}] {crit_text}\n'
                 f'   <evidence{trust_note}>{evidence_text}</evidence>'
             )
         criteria_block = "\n".join(lines)
