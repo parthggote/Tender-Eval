@@ -125,19 +125,36 @@ def extract_criteria(self, tender_id: str) -> dict:
 
     db = get_session()
     try:
+        tender_uuid = uuid.UUID(tender_id)
+
         run = db.execute(
             select(CriterionExtractionRun).where(
-                CriterionExtractionRun.tender_id == uuid.UUID(tender_id),
-                CriterionExtractionRun.status == "PENDING"
+                CriterionExtractionRun.tender_id == tender_uuid,
+                CriterionExtractionRun.status.in_(
+                    [ProcessingStatus.PENDING.value, ProcessingStatus.RUNNING.value]
+                ),
             )
+            .order_by(CriterionExtractionRun.created_at.desc())
         ).scalars().first()
 
-        if run:
+        # For auto-triggered extraction (e.g. after OCR), the API might not have
+        # created a CriterionExtractionRun yet. Create one so the portal can
+        # show status and failures.
+        if not run:
+            run = CriterionExtractionRun(
+                tender_id=tender_uuid,
+                status=ProcessingStatus.RUNNING.value,
+                created_at=datetime.utcnow(),
+            )
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+        else:
             run.status = ProcessingStatus.RUNNING.value
             db.commit()
 
         docs = db.execute(
-            select(TenderDocument).where(TenderDocument.tender_id == uuid.UUID(tender_id))
+            select(TenderDocument).where(TenderDocument.tender_id == tender_uuid)
         ).scalars().all()
         doc_ids = [d.id for d in docs]
 
@@ -148,9 +165,8 @@ def extract_criteria(self, tender_id: str) -> dict:
         if not pages:
             # OCR may still be running — retry after 15s (up to 3 times = 45s total wait)
             print(f"[extract_criteria] No text yet for tender {tender_id}, retrying…")
-            if run:
-                run.status = ProcessingStatus.PENDING.value
-                db.commit()
+            run.status = ProcessingStatus.PENDING.value
+            db.commit()
             raise self.retry(countdown=15)
 
         full_text = "\n".join(p.text for p in pages)
@@ -159,14 +175,33 @@ def extract_criteria(self, tender_id: str) -> dict:
         try:
             criteria_data = gemini_client.extract_criteria(full_text)
         except RuntimeError as exc:
-            # Gemini unavailable / all keys exhausted — reset run and retry the task
-            print(f"[extract_criteria] Gemini call failed: {exc}, will retry task")
-            if run:
-                run.status = ProcessingStatus.PENDING.value
+            msg = str(exc)
+
+            # Hard failure: quota bucket is 0 ("limit: 0") — retrying will not help.
+            # This typically means the project has no active quota for this model/tier.
+            if "limit: 0" in msg or "API quota exhausted" in msg:
+                print(f"[extract_criteria] Gemini quota exhausted: {exc}")
+                run.status = ProcessingStatus.FAILED.value
+                run.finished_at = datetime.utcnow()
+                run.model = settings.gemini_text_model
                 db.commit()
+                raise RuntimeError("LLM_QUOTA_EXHAUSTED") from exc
+
+            # Transient failure: backoff + retry.
+            print(f"[extract_criteria] Gemini call failed: {exc}, will retry task")
+            run.status = ProcessingStatus.PENDING.value
+            db.commit()
             raise self.retry(countdown=30, exc=exc)
 
         print(f"[extract_criteria] Gemini returned {len(criteria_data)} criteria")
+
+        if not criteria_data:
+            # Defensive: treat empty extraction as failure (creates no criteria => cannot evaluate).
+            run.status = ProcessingStatus.FAILED.value
+            run.finished_at = datetime.utcnow()
+            run.model = settings.gemini_text_model
+            db.commit()
+            raise RuntimeError("NO_CRITERIA_EXTRACTED")
 
         # Cap at 20 most important criteria — prioritise mandatory ones first,
         # then by order returned (Gemini already ranks by relevance).
@@ -179,7 +214,7 @@ def extract_criteria(self, tender_id: str) -> dict:
 
         for c in criteria_data:
             db.add(Criterion(
-                tender_id=uuid.UUID(tender_id),
+                tender_id=tender_uuid,
                 text=c["text"],
                 type=c["type"],
                 threshold=str(c["threshold"]) if c.get("threshold") else None,
@@ -189,10 +224,9 @@ def extract_criteria(self, tender_id: str) -> dict:
                 created_at=datetime.utcnow()
             ))
 
-        if run:
-            run.status = ProcessingStatus.SUCCEEDED.value
-            run.finished_at = datetime.utcnow()
-            run.model = "gemini-2.0-flash"
+        run.status = ProcessingStatus.SUCCEEDED.value
+        run.finished_at = datetime.utcnow()
+        run.model = settings.gemini_text_model
         db.commit()
 
         return {"ok": True, "criteriaCount": len(criteria_data)}
@@ -264,10 +298,25 @@ def evaluate_tender(self, tender_id: str) -> dict:
             try:
                 eval_results = gemini_client.evaluate_criteria_batch(criteria, evidence_map)
             except RuntimeError as exc:
-                print(f"[evaluate_tender] Gemini batch call failed: {exc}, will retry task")
-                run.status = ProcessingStatus.PENDING.value
-                db.commit()
-                raise self.retry(countdown=30, exc=exc)
+                msg = str(exc)
+
+                # Hard failure: quota bucket is 0. Don't hammer retries; fall back to
+                # NEEDS_REVIEW for all criteria so reviewers can proceed manually.
+                if "limit: 0" in msg or "API quota exhausted" in msg:
+                    print(f"[evaluate_tender] Gemini quota exhausted: {exc}. Falling back to NEEDS_REVIEW.")
+                    eval_results = {
+                        str(c.id): {
+                            "verdict": "NEEDS_REVIEW",
+                            "reason": "LLM quota exhausted/unavailable; manual review required.",
+                            "confidence": 0.0,
+                        }
+                        for c in criteria
+                    }
+                else:
+                    print(f"[evaluate_tender] Gemini batch call failed: {exc}, will retry task")
+                    run.status = ProcessingStatus.PENDING.value
+                    db.commit()
+                    raise self.retry(countdown=30, exc=exc)
 
             for c in criteria:
                 result = eval_results.get(str(c.id), {

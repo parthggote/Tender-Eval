@@ -5,8 +5,8 @@ import re
 import time
 
 from google import genai
+from groq import Groq
 from worker.config import settings
-from worker.services.gemini_gate import gemini_generate_gate
 
 
 # ── Prompt-injection sanitizer ────────────────────────────────────────────────
@@ -30,14 +30,20 @@ def _sanitize_evidence(text: str) -> tuple[str, bool]:
     return cleaned, suspicious
 
 
-# ── GeminiClient ──────────────────────────────────────────────────────────────
+# ── GeminiClient (with Groq fallback) ────────────────────────────────────────
 
 class GeminiClient:
     def __init__(self):
-        # Delegate key resolution to settings — supports both GEMINI_API_KEY and
-        # GEMINI_API_KEYS (comma-separated) with GEMINI_API_KEYS taking precedence.
+        # Gemini configuration
         self._api_keys: list[str] = settings.get_gemini_keys()
         self._clients: dict[str, genai.Client] = {}
+        
+        # Groq fallback configuration
+        self._groq_api_key = getattr(settings, 'groq_api_key', None)
+        self._groq_client = None
+        if self._groq_api_key:
+            self._groq_client = Groq(api_key=self._groq_api_key)
+            print(f"[llm] Groq fallback enabled")
 
     def _get_client(self, api_key: str) -> genai.Client:
         if api_key not in self._clients:
@@ -47,66 +53,97 @@ class GeminiClient:
             )
         return self._clients[api_key]
 
-    def _generate(self, prompt: str, retries: int = 3) -> str:
+    def _generate_with_groq(self, prompt: str, model: str = "llama-3.3-70b-versatile") -> str:
         """
-        Try each API key in order. On 429/503/UNAVAILABLE errors, rotate to the
-        next key before sleeping. Respects the retryDelay hint from the API response.
-        Raises RuntimeError if all retries are exhausted.
+        Fallback to Groq API when Gemini is rate limited.
+        Uses OpenAI-compatible chat completions API.
         """
-        if not self._api_keys:
-            raise RuntimeError("[gemini] No API keys configured (GEMINI_API_KEY is empty)")
+        if not self._groq_client:
+            raise RuntimeError("[groq] No API key configured (GROQ_API_KEY is empty)")
+        
+        try:
+            print(f"[groq] Calling {model}...")
+            response = self._groq_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a helpful assistant that extracts and evaluates procurement criteria. Always respond with valid JSON only, no markdown formatting."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=8192,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            print(f"[groq] Error: {e}")
+            raise RuntimeError(f"[groq] API call failed: {e}")
 
-        keys = list(self._api_keys)
-        last_error: Exception | None = None
+    def _generate(self, prompt: str, retries: int = 2, use_groq_fallback: bool = True) -> str:
+        """
+        Try Gemini first, then fall back to Groq on rate limits.
+        Raises RuntimeError if all attempts fail.
+        """
+        if not self._api_keys and not self._groq_client:
+            raise RuntimeError("[llm] No API keys configured (GEMINI_API_KEY and GROQ_API_KEY are empty)")
 
-        for attempt in range(retries):
-            api_key = keys[attempt % len(keys)]
-            client = self._get_client(api_key)
-            try:
-                # Shared pacing across all worker processes to avoid 429 stampedes.
-                gemini_generate_gate.wait_turn()
-                response = client.models.generate_content(
-                    # Keep this on a relatively generous model for dev; rate limiting is handled
-                    # externally by the shared Redis gate.
-                    model=settings.gemini_text_model,
-                    contents=prompt,
-                )
-                return response.text or ""
-            except Exception as e:
-                last_error = e
-                msg = str(e)
-                is_rate_limit = "429" in msg or "RESOURCE_EXHAUSTED" in msg
-                is_unavailable = "503" in msg or "UNAVAILABLE" in msg
-                is_quota_exceeded = "quota" in msg.lower() and "exceeded" in msg.lower()
+        # Try Gemini first if keys are available
+        if self._api_keys:
+            keys = list(self._api_keys)
+            last_error: Exception | None = None
+            gemini_quota_exhausted = False
 
-                # Log detailed error info for debugging
-                if is_rate_limit:
-                    print(f"[gemini] Rate limit error details: {msg[:500]}")
-
-                if is_rate_limit or is_unavailable:
-                    # If quota is completely exhausted (not just rate limited), fail fast
-                    if is_quota_exceeded and "limit: 0" in msg:
-                        print(f"[gemini] Quota completely exhausted (limit: 0). Cannot retry.")
-                        raise RuntimeError(f"[gemini] API quota exhausted: {msg}")
-                    
-                    # Try to extract retryDelay from the API error body
-                    suggested = self._parse_retry_delay(msg)
-                    # Use API hint if available, otherwise exponential backoff
-                    # Cap at 60s so we don't block the worker for a full minute per attempt
-                    wait = min(suggested if suggested else (attempt + 1) * 15, 60)
-                    # Tell all workers to chill for a bit so we don't immediately re-stampede.
-                    gemini_generate_gate.set_cooldown(wait)
-                    reason = "rate limited" if is_rate_limit else "unavailable (503)"
-                    key_hint = f"key ...{api_key[-6:]}" if len(api_key) > 6 else "key"
-                    print(
-                        f"[gemini] {reason} on {key_hint}, "
-                        f"retrying in {wait}s (attempt {attempt + 1}/{retries})"
+            for attempt in range(retries):
+                api_key = keys[attempt % len(keys)]
+                client = self._get_client(api_key)
+                try:
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=prompt,
                     )
-                    time.sleep(wait)
-                else:
-                    raise
+                    return response.text or ""
+                except Exception as e:
+                    last_error = e
+                    msg = str(e)
+                    is_rate_limit = "429" in msg or "RESOURCE_EXHAUSTED" in msg
+                    is_unavailable = "503" in msg or "UNAVAILABLE" in msg
+                    is_quota_exceeded = "quota" in msg.lower() and "exceeded" in msg.lower()
 
-        raise RuntimeError(f"[gemini] All {retries} attempts failed. Last error: {last_error}")
+                    if is_rate_limit or is_unavailable:
+                        # If quota is completely exhausted, skip retries and go to Groq
+                        if is_quota_exceeded and "limit: 0" in msg:
+                            print(f"[gemini] Quota exhausted (limit: 0). Switching to Groq.")
+                            gemini_quota_exhausted = True
+                            break
+                        
+                        # Otherwise, try next key with minimal delay
+                        key_hint = f"key ...{api_key[-6:]}" if len(api_key) > 6 else "key"
+                        print(f"[gemini] Rate limited on {key_hint} (attempt {attempt + 1}/{retries})")
+                        
+                        # Only sleep if we have more retries
+                        if attempt < retries - 1:
+                            time.sleep(2)  # Short delay before trying next key
+                    else:
+                        # Non-rate-limit error, re-raise
+                        raise
+
+            # If we exhausted all Gemini retries or quota is gone, try Groq
+            if use_groq_fallback and self._groq_client and (gemini_quota_exhausted or last_error):
+                print(f"[llm] Gemini failed, falling back to Groq...")
+                return self._generate_with_groq(prompt)
+            
+            raise RuntimeError(f"[gemini] All {retries} attempts failed. Last error: {last_error}")
+        
+        # No Gemini keys, use Groq directly
+        elif self._groq_client:
+            print("[llm] No Gemini keys configured, using Groq directly")
+            return self._generate_with_groq(prompt)
+        
+        raise RuntimeError("[llm] No API keys available")
 
     @staticmethod
     def _parse_retry_delay(error_msg: str) -> int | None:
@@ -148,16 +185,48 @@ Return ONLY a JSON array, no explanation. Each object must have:
 Tender text:
 {text[:28000]}"""
 
+        # NOTE: do not swallow provider/quota errors here — callers (Celery tasks)
+        # need to decide whether to retry or fail the run.
+        raw_text = self._generate(prompt)
+        raw = self._parse_json(raw_text)
+
         try:
-            raw = self._parse_json(self._generate(prompt))
-            return json.loads(raw)
+            data = json.loads(raw)
         except Exception as e:
-            print(f"[gemini] extract_criteria parse error: {e}")
-            return []
+            raise RuntimeError(f"[llm] extract_criteria invalid JSON: {e}") from e
+
+        if not isinstance(data, list):
+            raise RuntimeError("[llm] extract_criteria expected a JSON array")
+
+        allowed_types = {"FINANCIAL", "TECHNICAL", "COMPLIANCE", "CERTIFICATION"}
+        out: list[dict] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            text_val = str(item.get("text", "")).strip()
+            if not text_val:
+                continue
+            t = str(item.get("type", "TECHNICAL")).upper()
+            if t not in allowed_types:
+                t = "TECHNICAL"
+            out.append(
+                {
+                    "text": text_val,
+                    "type": t,
+                    "threshold": item.get("threshold"),
+                    "mandatory": bool(item.get("mandatory", True)),
+                    "source_page": item.get("source_page"),
+                }
+            )
+
+        if not out:
+            raise RuntimeError("[llm] extract_criteria returned 0 usable criteria")
+
+        return out
 
     def evaluate_criteria_batch(self, criteria: list, evidence_map: dict[str, str]) -> dict[str, dict]:
         """
-        Evaluate ALL criteria for a single bidder in one Gemini call.
+        Evaluate ALL criteria for a single bidder in one LLM call.
         Returns a dict keyed by criterion_id (str) with verdict/reason/confidence.
         Every criterion is guaranteed to be present — missing ones default to NEEDS_REVIEW.
         """
@@ -219,7 +288,7 @@ Criteria and evidence:
                         "confidence": float(item.get("confidence", 0.5)),
                     }
         except Exception as e:
-            print(f"[gemini] evaluate_criteria_batch parse error: {e}")
+            print(f"[llm] evaluate_criteria_batch parse error: {e}")
             # Defaults already populated above — just log and return them
 
         return result

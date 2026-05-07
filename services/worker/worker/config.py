@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     gemini_api_keys: str = ""
     gemini_text_model: str = "gemini-2.0-flash"
     gemini_embedding_model: str = "gemini-embedding-001"
+    # Groq API key for fallback when Gemini is rate limited
+    groq_api_key: str = ""
     # Global throttling for Gemini API calls (shared across all Celery worker processes
     # via Redis). This helps avoid repeated 429s caused by stampedes.
     #
@@ -29,7 +31,8 @@ class Settings(BaseSettings):
     gemini_gate_namespace: str = "tendereval:gemini"
 
     @field_validator("internal_database_url", "redis_url", "supabase_url",
-                     "supabase_service_key", "gemini_api_key", "gemini_api_keys", mode="before")
+                     "supabase_service_key", "gemini_api_key", "gemini_api_keys", 
+                     "groq_api_key", mode="before")
     @classmethod
     def strip_whitespace(cls, v: str) -> str:
         return v.strip() if isinstance(v, str) else v
