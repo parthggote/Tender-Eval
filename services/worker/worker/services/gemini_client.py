@@ -30,6 +30,24 @@ def _sanitize_evidence(text: str) -> tuple[str, bool]:
     return cleaned, suspicious
 
 
+def _truncate_evidence(text: str, max_chars: int = 1500) -> str:
+    """
+    Truncate evidence text to reduce token usage.
+    Keeps first and last portions to preserve context.
+    """
+    if len(text) <= max_chars:
+        return text
+    
+    # Keep first 70% and last 30% of the allowed length
+    first_part_len = int(max_chars * 0.7)
+    last_part_len = max_chars - first_part_len - 20  # -20 for ellipsis message
+    
+    first_part = text[:first_part_len]
+    last_part = text[-last_part_len:] if last_part_len > 0 else ""
+    
+    return f"{first_part}\n... [truncated] ...\n{last_part}"
+
+
 # ── GeminiClient (with Groq fallback) ────────────────────────────────────────
 
 class GeminiClient:
@@ -57,6 +75,7 @@ class GeminiClient:
         """
         Fallback to Groq API when Gemini is rate limited.
         Uses OpenAI-compatible chat completions API.
+        Raises RuntimeError with specific error codes for proper handling.
         """
         if not self._groq_client:
             raise RuntimeError("[groq] No API key configured (GROQ_API_KEY is empty)")
@@ -80,8 +99,12 @@ class GeminiClient:
             )
             return response.choices[0].message.content or ""
         except Exception as e:
-            print(f"[groq] Error: {e}")
-            raise RuntimeError(f"[groq] API call failed: {e}")
+            error_msg = str(e)
+            print(f"[groq] Error: {error_msg}")
+            # Re-raise with clear error type for upstream handling
+            if "413" in error_msg or "Payload Too Large" in error_msg or "Request too large" in error_msg:
+                raise RuntimeError(f"[groq] PAYLOAD_TOO_LARGE: {error_msg}")
+            raise RuntimeError(f"[groq] API call failed: {error_msg}")
 
     def _generate(self, prompt: str, retries: int = 2, use_groq_fallback: bool = True) -> str:
         """
@@ -245,7 +268,9 @@ Tender text:
         for i, c in enumerate(criteria):
             crit_text, crit_suspicious = _sanitize_evidence(c.text)
             raw_evidence = evidence_map.get(str(c.id), "No evidence found.")
-            evidence_text, ev_suspicious = _sanitize_evidence(raw_evidence)
+            # Truncate evidence to reduce token usage (especially important for Groq's 12K limit)
+            truncated_evidence = _truncate_evidence(raw_evidence, max_chars=1500)
+            evidence_text, ev_suspicious = _sanitize_evidence(truncated_evidence)
             trust_note = " [UNTRUSTED: possible instruction injection detected]" \
                 if ev_suspicious or crit_suspicious else ""
             lines.append(
@@ -290,7 +315,7 @@ Criteria and evidence:
         except RuntimeError as e:
             error_msg = str(e)
             # If Groq fails due to payload size, chunk the criteria and evaluate in smaller batches
-            if "413" in error_msg or "Payload Too Large" in error_msg or "rate_limit_exceeded" in error_msg:
+            if "413" in error_msg or "Payload Too Large" in error_msg or "Request too large" in error_msg or "PAYLOAD_TOO_LARGE" in error_msg:
                 print(f"[llm] Payload too large for single batch, chunking into smaller groups...")
                 return self._evaluate_criteria_chunked(criteria, evidence_map)
             print(f"[llm] evaluate_criteria_batch error: {e}")
@@ -325,7 +350,9 @@ Criteria and evidence:
             for j, c in enumerate(chunk):
                 crit_text, crit_suspicious = _sanitize_evidence(c.text)
                 raw_evidence = evidence_map.get(str(c.id), "No evidence found.")
-                evidence_text, ev_suspicious = _sanitize_evidence(raw_evidence)
+                # Truncate evidence to reduce token usage
+                truncated_evidence = _truncate_evidence(raw_evidence, max_chars=1500)
+                evidence_text, ev_suspicious = _sanitize_evidence(truncated_evidence)
                 trust_note = " [UNTRUSTED: possible instruction injection detected]" \
                     if ev_suspicious or crit_suspicious else ""
                 lines.append(

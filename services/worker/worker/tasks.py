@@ -291,7 +291,15 @@ def evaluate_tender(self, tender_id: str) -> dict:
                 results = pgvector_store.search(
                     str(b.id), criterion_vector_map[str(c.id)], limit=3
                 )
-                evidence_map[str(c.id)] = "\n".join(r["text"] for r in results) or "No evidence found."
+                # Limit evidence text to reduce token usage (each passage max ~500 chars)
+                evidence_parts = []
+                for r in results:
+                    text = r["text"]
+                    # Truncate individual passages to ~500 chars
+                    if len(text) > 500:
+                        text = text[:500] + "..."
+                    evidence_parts.append(text)
+                evidence_map[str(c.id)] = "\n".join(evidence_parts) or "No evidence found."
 
             # ── Optimisation 3: evaluate ALL criteria in ONE Gemini call per bidder ──
             print(f"[evaluate_tender] Evaluating {len(criteria)} criteria for bidder {b.id} in one call…")
