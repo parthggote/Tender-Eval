@@ -6,6 +6,7 @@ import time
 
 from google import genai
 from worker.config import settings
+from worker.services.gemini_gate import gemini_generate_gate
 
 
 # ── Prompt-injection sanitizer ────────────────────────────────────────────────
@@ -62,8 +63,12 @@ class GeminiClient:
             api_key = keys[attempt % len(keys)]
             client = self._get_client(api_key)
             try:
+                # Shared pacing across all worker processes to avoid 429 stampedes.
+                gemini_generate_gate.wait_turn()
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",  # free tier: 1500 RPD vs 20 RPD for 2.5-flash
+                    # Keep this on a relatively generous model for dev; rate limiting is handled
+                    # externally by the shared Redis gate.
+                    model=settings.gemini_text_model,
                     contents=prompt,
                 )
                 return response.text or ""
@@ -72,13 +77,25 @@ class GeminiClient:
                 msg = str(e)
                 is_rate_limit = "429" in msg or "RESOURCE_EXHAUSTED" in msg
                 is_unavailable = "503" in msg or "UNAVAILABLE" in msg
+                is_quota_exceeded = "quota" in msg.lower() and "exceeded" in msg.lower()
+
+                # Log detailed error info for debugging
+                if is_rate_limit:
+                    print(f"[gemini] Rate limit error details: {msg[:500]}")
 
                 if is_rate_limit or is_unavailable:
+                    # If quota is completely exhausted (not just rate limited), fail fast
+                    if is_quota_exceeded and "limit: 0" in msg:
+                        print(f"[gemini] Quota completely exhausted (limit: 0). Cannot retry.")
+                        raise RuntimeError(f"[gemini] API quota exhausted: {msg}")
+                    
                     # Try to extract retryDelay from the API error body
                     suggested = self._parse_retry_delay(msg)
                     # Use API hint if available, otherwise exponential backoff
                     # Cap at 60s so we don't block the worker for a full minute per attempt
                     wait = min(suggested if suggested else (attempt + 1) * 15, 60)
+                    # Tell all workers to chill for a bit so we don't immediately re-stampede.
+                    gemini_generate_gate.set_cooldown(wait)
                     reason = "rate limited" if is_rate_limit else "unavailable (503)"
                     key_hint = f"key ...{api_key[-6:]}" if len(api_key) > 6 else "key"
                     print(

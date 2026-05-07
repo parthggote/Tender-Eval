@@ -91,12 +91,25 @@ def index_bidder_documents(tender_id: str, bidder_id: str) -> dict:
             select(DocumentPage).where(DocumentPage.document_id.in_(doc_ids))
         ).scalars().all()
 
-        for p in pages:
-            embedding = embedder.embed([p.text])[0]
+        if not pages:
+            return {"ok": True, "indexedPageCount": 0}
+
+        # Batch embedding to avoid hammering the API (one request per 20 pages).
+        texts = [p.text for p in pages]
+        embeddings = embedder.embed(texts)
+
+        by_doc: dict[str, list[dict]] = {}
+        for p, emb in zip(pages, embeddings, strict=False):
+            doc_id = str(p.document_id)
+            by_doc.setdefault(doc_id, []).append(
+                {"text": p.text, "embedding": emb, "page_number": p.page_number}
+            )
+
+        for doc_id, passages in by_doc.items():
             pgvector_store.upsert_passages(
                 bidder_id=bidder_id,
-                document_id=str(p.document_id),
-                passages=[{"text": p.text, "embedding": embedding, "page_number": p.page_number}]
+                document_id=doc_id,
+                passages=passages,
             )
 
         return {"ok": True, "indexedPageCount": len(pages)}

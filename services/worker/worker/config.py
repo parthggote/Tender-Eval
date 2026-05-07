@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     # If set, takes precedence over gemini_api_key.
     # Example: GEMINI_API_KEYS=key1,key2,key3
     gemini_api_keys: str = ""
+    gemini_text_model: str = "gemini-2.0-flash"
+    gemini_embedding_model: str = "gemini-embedding-001"
+    # Global throttling for Gemini API calls (shared across all Celery worker processes
+    # via Redis). This helps avoid repeated 429s caused by stampedes.
+    #
+    # NOTE: Gemini rate limits are applied per Google Cloud project, not per API key,
+    # so rotating keys from the same project won't increase quota; pacing is still needed.
+    gemini_generate_rpm: float = 12.0
+    gemini_embed_rpm: float = 80.0
+    gemini_gate_namespace: str = "tendereval:gemini"
 
     @field_validator("internal_database_url", "redis_url", "supabase_url",
                      "supabase_service_key", "gemini_api_key", "gemini_api_keys", mode="before")
