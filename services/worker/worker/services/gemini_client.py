@@ -310,7 +310,7 @@ Criteria and evidence:
                     result[cid] = {
                         "verdict": item.get("verdict", "NEEDS_REVIEW"),
                         "reason": item.get("reason", ""),
-                        "confidence": float(item.get("confidence", 0.5)),
+                        "confidence": min(max(float(item.get("confidence", 0.5)), 0.0), 1.0),  # Clamp to 0-1
                     }
         except (RuntimeError, Exception) as e:
             error_msg = str(e)
@@ -398,7 +398,7 @@ Criteria and evidence:
                         result[cid] = {
                             "verdict": item.get("verdict", "NEEDS_REVIEW"),
                             "reason": item.get("reason", ""),
-                            "confidence": float(item.get("confidence", 0.5)),
+                            "confidence": min(max(float(item.get("confidence", 0.5)), 0.0), 1.0),  # Clamp to 0-1
                         }
             except Exception as e:
                 print(f"[llm] Chunk {chunk_num} evaluation failed: {e}")
